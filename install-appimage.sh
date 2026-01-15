@@ -8,9 +8,14 @@
 # 2. Copies the AppImage there
 # 3. Extracts the icon
 # 4. Creates a .desktop file for app launcher integration
+# 5. Optionally sets up system tray autostart
 #
 # Usage:
-#   ./install-appimage.sh [path-to-appimage]
+#   ./install-appimage.sh [OPTIONS] [path-to-appimage]
+#
+# Options:
+#   --with-tray    Also set up system tray to start on login
+#   --help         Show this help message
 #
 # If no path is provided, it looks for the AppImage in the current directory.
 #
@@ -22,13 +27,18 @@ APP_NAME="cosmic-bing-wallpaper"
 APPIMAGE_NAME="cosmic-bing-wallpaper-x86_64.AppImage"
 APPS_DIR="$HOME/Apps"
 DESKTOP_DIR="$HOME/.local/share/applications"
+AUTOSTART_DIR="$HOME/.config/autostart"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 SYMBOLIC_ICON_DIR="$HOME/.local/share/icons/hicolor/symbolic/apps"
+
+# Options
+INSTALL_TRAY=false
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 info() {
@@ -44,11 +54,42 @@ error() {
     exit 1
 }
 
-# Find the AppImage
-if [ $# -ge 1 ]; then
-    APPIMAGE_PATH="$1"
-else
-    # Look in current directory
+show_help() {
+    echo "Install cosmic-bing-wallpaper AppImage"
+    echo ""
+    echo "Usage: $0 [OPTIONS] [path-to-appimage]"
+    echo ""
+    echo "Options:"
+    echo "  --with-tray    Also set up system tray to start on login"
+    echo "  --help         Show this help message"
+    echo ""
+    echo "If no path is provided, looks for the AppImage in current directory."
+    exit 0
+}
+
+# Parse arguments
+APPIMAGE_PATH=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --with-tray)
+            INSTALL_TRAY=true
+            shift
+            ;;
+        --help|-h)
+            show_help
+            ;;
+        -*)
+            error "Unknown option: $1"
+            ;;
+        *)
+            APPIMAGE_PATH="$1"
+            shift
+            ;;
+    esac
+done
+
+# Find the AppImage if not specified
+if [ -z "$APPIMAGE_PATH" ]; then
     if [ -f "./$APPIMAGE_NAME" ]; then
         APPIMAGE_PATH="./$APPIMAGE_NAME"
     elif [ -f "./cosmic-bing-wallpaper.AppImage" ]; then
@@ -136,6 +177,24 @@ Keywords=wallpaper;bing;background;desktop;cosmic;
 StartupNotify=true
 EOF
 
+# Set up tray autostart if requested
+if [ "$INSTALL_TRAY" = true ]; then
+    info "Setting up system tray autostart..."
+    mkdir -p "$AUTOSTART_DIR"
+
+    cat > "$AUTOSTART_DIR/cosmic-bing-wallpaper-tray.desktop" << EOF
+[Desktop Entry]
+Name=Bing Wallpaper Tray
+Comment=System tray for Bing Wallpaper
+Exec=$DEST_APPIMAGE --tray
+Icon=io.github.cosmic-bing-wallpaper
+Terminal=false
+Type=Application
+X-GNOME-Autostart-enabled=true
+EOF
+    info "Tray will start automatically on next login"
+fi
+
 # Update desktop database
 if command -v update-desktop-database &> /dev/null; then
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
@@ -154,9 +213,17 @@ echo "application launcher."
 echo ""
 echo "Installed to: $DEST_APPIMAGE"
 echo "Desktop file: $DESKTOP_DIR/cosmic-bing-wallpaper.desktop"
+if [ "$INSTALL_TRAY" = true ]; then
+    echo "Tray autostart: $AUTOSTART_DIR/cosmic-bing-wallpaper-tray.desktop"
+    echo ""
+    echo -e "${CYAN}To start the tray now:${NC} $DEST_APPIMAGE --tray &"
+fi
 echo ""
 echo "To uninstall, run:"
 echo "  rm \"$DEST_APPIMAGE\""
 echo "  rm \"$DESKTOP_DIR/cosmic-bing-wallpaper.desktop\""
 echo "  rm \"$ICON_DIR/io.github.cosmic-bing-wallpaper.svg\""
 echo "  rm \"$SYMBOLIC_ICON_DIR/io.github.cosmic-bing-wallpaper-symbolic.svg\""
+if [ "$INSTALL_TRAY" = true ]; then
+    echo "  rm \"$AUTOSTART_DIR/cosmic-bing-wallpaper-tray.desktop\""
+fi

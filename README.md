@@ -52,8 +52,15 @@ chmod +x install-appimage.sh
 The installer will:
 - Create `~/Apps` directory if needed
 - Copy the AppImage there
-- Extract and install the icon
+- Extract and install the icons
 - Create a `.desktop` file so it appears in your application launcher
+
+**Install with system tray autostart:**
+```bash
+./install-appimage.sh --with-tray cosmic-bing-wallpaper-x86_64.AppImage
+```
+
+This also sets up the tray icon to start automatically on login.
 
 **Or run directly without installing:**
 ```bash
