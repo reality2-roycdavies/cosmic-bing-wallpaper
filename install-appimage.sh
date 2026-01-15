@@ -182,8 +182,8 @@ if [ "$INSTALL_TRAY" = true ]; then
     info "Setting up systemd services for tray and daily updates..."
     mkdir -p "$SYSTEMD_USER_DIR"
 
-    # Create tray service (starts on COSMIC session)
-    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper-tray.service" << EOF
+    # Create tray service (starts on COSMIC session) - uses %h specifier for portability
+    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper-tray.service" << 'EOF'
 [Unit]
 Description=Bing Wallpaper system tray for COSMIC desktop
 After=cosmic-session.target
@@ -191,7 +191,7 @@ PartOf=cosmic-session.target
 
 [Service]
 Type=simple
-ExecStart=$DEST_APPIMAGE --tray
+ExecStart=%h/Apps/cosmic-bing-wallpaper-x86_64.AppImage --tray
 Restart=on-failure
 RestartSec=5
 
@@ -199,8 +199,8 @@ RestartSec=5
 WantedBy=cosmic-session.target
 EOF
 
-    # Create daily fetch service
-    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.service" << EOF
+    # Create daily fetch service - uses %h and %U specifiers for portability
+    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.service" << 'EOF'
 [Unit]
 Description=Fetch and set Bing daily wallpaper for COSMIC desktop
 After=network-online.target
@@ -208,18 +208,18 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=$DEST_APPIMAGE --fetch-and-apply
-Environment=HOME=$HOME
+ExecStart=%h/Apps/cosmic-bing-wallpaper-x86_64.AppImage --fetch-and-apply
+Environment=HOME=%h
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=wayland-1
-Environment=XDG_RUNTIME_DIR=/run/user/$(id -u)
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 
 [Install]
 WantedBy=default.target
 EOF
 
     # Create daily timer
-    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.timer" << EOF
+    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.timer" << 'EOF'
 [Unit]
 Description=Daily Bing wallpaper update timer
 
