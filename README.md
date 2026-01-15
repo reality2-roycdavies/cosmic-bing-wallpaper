@@ -339,13 +339,32 @@ just fmt              # Format code
 
 ## About This Project
 
-This project was created collaboratively with [Claude](https://claude.ai) (Anthropic's AI assistant) using [Claude Code](https://claude.ai/code). It demonstrates AI-assisted development of:
+This project was created collaboratively by [Dr. Roy C. Davies](https://roycdavies.github.io) and [Claude](https://claude.ai) (Anthropic's AI assistant) using [Claude Code](https://claude.ai/code). It demonstrates AI-assisted development of:
 
 - Native Linux desktop applications using Rust
 - Integration with the COSMIC desktop environment
 - Shell scripts for system automation
 - Systemd timer configuration
 - AppImage packaging
+
+### Developer Reflection
+
+*From Dr. Roy C. Davies:*
+
+> This has been an amazing process. From initial idea to a fully functional, released application with GUI, system tray, systemd integration, and AppImage packaging—all accomplished in just a few hours of conversation with Claude.
+>
+> However, I must be honest: I have learned very little about the actual mechanics of what the app does. Claude wrote the Rust code, the systemd service files, the build scripts. I directed, reviewed, tested, and made decisions—but I couldn't reproduce this from scratch without AI assistance.
+>
+> **Does that matter?**
+>
+> Perhaps not. Software development has always been about standing on the shoulders of giants—using libraries, frameworks, and tools we don't fully understand. AI assistance is simply the next evolution. What matters is that the end result works, is maintainable, and solves a real problem.
+>
+> The complete conversation transcripts are available in the [`transcripts/`](transcripts/) folder for those interested in seeing exactly how this collaboration unfolded.
+
+### Educational Resources
+
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Technical journey from concept to release
+- **[transcripts/](transcripts/)** - Complete conversation logs (JSONL + Markdown)
 
 ## License
 
