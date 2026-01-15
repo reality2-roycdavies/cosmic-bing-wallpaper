@@ -24,12 +24,12 @@ fn is_timer_enabled() -> bool {
         .unwrap_or(false)
 }
 
-/// Toggle the daily update timer
+/// Toggle the daily update timer (waits for completion)
 fn toggle_timer(enable: bool) {
     let action = if enable { "enable" } else { "disable" };
     let _ = Command::new("systemctl")
         .args(["--user", action, "--now", "cosmic-bing-wallpaper.timer"])
-        .spawn();
+        .status(); // Wait for completion so menu reflects new state
 }
 
 /// The system tray implementation
