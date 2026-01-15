@@ -96,11 +96,11 @@ cd "$TEMP_DIR"
 "$DEST_APPIMAGE" --appimage-extract >/dev/null 2>&1 || true
 
 # Find and copy the icon
-if [ -f "squashfs-root/cosmic-bing-wallpaper.svg" ]; then
-    cp "squashfs-root/cosmic-bing-wallpaper.svg" "$ICON_DIR/"
+if [ -f "squashfs-root/io.github.cosmic-bing-wallpaper.svg" ]; then
+    cp "squashfs-root/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/"
     info "Icon installed to $ICON_DIR"
-elif [ -f "squashfs-root/usr/share/icons/hicolor/scalable/apps/cosmic-bing-wallpaper.svg" ]; then
-    cp "squashfs-root/usr/share/icons/hicolor/scalable/apps/cosmic-bing-wallpaper.svg" "$ICON_DIR/"
+elif [ -f "squashfs-root/usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg" ]; then
+    cp "squashfs-root/usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/"
     info "Icon installed to $ICON_DIR"
 else
     warn "Could not extract icon from AppImage"
@@ -118,7 +118,7 @@ Name=Bing Wallpaper
 GenericName=Wallpaper Manager
 Comment=Bing Daily Wallpaper for COSMIC Desktop
 Exec=$DEST_APPIMAGE
-Icon=cosmic-bing-wallpaper
+Icon=io.github.cosmic-bing-wallpaper
 Terminal=false
 Type=Application
 Categories=Settings;DesktopSettings;
@@ -148,4 +148,4 @@ echo ""
 echo "To uninstall, run:"
 echo "  rm \"$DEST_APPIMAGE\""
 echo "  rm \"$DESKTOP_DIR/cosmic-bing-wallpaper.desktop\""
-echo "  rm \"$ICON_DIR/cosmic-bing-wallpaper.svg\""
+echo "  rm \"$ICON_DIR/io.github.cosmic-bing-wallpaper.svg\""

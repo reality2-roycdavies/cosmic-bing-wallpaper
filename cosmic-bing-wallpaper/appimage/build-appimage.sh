@@ -33,8 +33,8 @@ cp "$PROJECT_DIR/target/release/cosmic-bing-wallpaper" "$APPDIR/usr/bin/"
 cp "$REPO_DIR/bing-wallpaper.sh" "$APPDIR/usr/share/cosmic-bing-wallpaper/"
 chmod +x "$APPDIR/usr/share/cosmic-bing-wallpaper/bing-wallpaper.sh"
 
-# Copy icon
-cp "$PROJECT_DIR/resources/cosmic-bing-wallpaper.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
+# Copy icon (using full app ID for proper panel icon association)
+cp "$PROJECT_DIR/resources/io.github.cosmic-bing-wallpaper.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
 
 # Copy AppStream metadata
 cp "$PROJECT_DIR/resources/io.github.cosmic-bing-wallpaper.appdata.xml" "$APPDIR/usr/share/metainfo/"
@@ -45,7 +45,7 @@ cat > "$APPDIR/io.github.cosmic-bing-wallpaper.desktop" << 'EOF'
 Name=Bing Wallpaper
 Comment=Bing Daily Wallpaper for COSMIC
 Exec=cosmic-bing-wallpaper
-Icon=cosmic-bing-wallpaper
+Icon=io.github.cosmic-bing-wallpaper
 Terminal=false
 Type=Application
 Categories=Settings;DesktopSettings;
@@ -68,8 +68,8 @@ chmod +x "$APPDIR/AppRun"
 # Create symlinks required by AppImage
 cd "$APPDIR"
 ln -sf io.github.cosmic-bing-wallpaper.desktop cosmic-bing-wallpaper.desktop
-ln -sf usr/share/icons/hicolor/scalable/apps/cosmic-bing-wallpaper.svg cosmic-bing-wallpaper.svg
-ln -sf cosmic-bing-wallpaper.svg .DirIcon
+ln -sf usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg io.github.cosmic-bing-wallpaper.svg
+ln -sf io.github.cosmic-bing-wallpaper.svg .DirIcon
 
 # Download appimagetool if not present
 APPIMAGETOOL="$SCRIPT_DIR/appimagetool-x86_64.AppImage"
