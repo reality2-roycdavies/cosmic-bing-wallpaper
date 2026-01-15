@@ -69,6 +69,22 @@ ExecStart=%h/.local/bin/cosmic-bing-wallpaper
 
 **Lesson:** Use systemd specifiers (`%h` = home directory, `%U` = user ID) for portable service files.
 
+**Additional pitfall:** When generating service files from shell scripts, be careful with heredocs:
+
+```bash
+# WRONG - $HOME expands at creation time, hardcoding the path
+cat > service.file << EOF
+ExecStart=$HOME/.local/bin/app
+EOF
+
+# CORRECT - use quoted heredoc to prevent expansion
+cat > service.file << 'EOF'
+ExecStart=%h/.local/bin/app
+EOF
+```
+
+The quoted `'EOF'` prevents shell variable expansion, preserving the `%h` specifier for systemd to interpret at runtime.
+
 ### 3. Filename Pattern Mismatch
 
 **Problem:** Shell script saved files as `bing-YYYY-MM-DD.jpg`, but Rust app expected `bing-{market}-YYYY-MM-DD.jpg`.
