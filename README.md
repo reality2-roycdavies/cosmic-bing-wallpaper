@@ -359,6 +359,12 @@ This project was created collaboratively by [Dr. Roy C. Davies](https://roycdavi
 >
 > Perhaps not. Software development has always been about standing on the shoulders of giants—using libraries, frameworks, and tools we don't fully understand. AI assistance is simply the next evolution. What matters is that the end result works, is maintainable, and solves a real problem.
 >
+> **What I learned:**
+>
+> This project was both a learning experience and a deliberate test of how far I could push Claude. The answer: remarkably far. But here's the crucial insight—while Claude is clever and solves problems well, **it still requires someone to ask the right questions**. The AI doesn't know what you want until you articulate it. It doesn't know something is broken until you test it and report back.
+>
+> In fact, **testing has become even more important than before**. When you don't fully understand the code that's been written, your ability to verify it works correctly becomes your primary contribution. Knowing *what* to test, *how* to test it, and recognising when something isn't quite right—these skills are now more valuable than ever.
+>
 > The complete conversation transcripts are available in the [`transcripts/`](transcripts/) folder for those interested in seeing exactly how this collaboration unfolded.
 
 ### Educational Resources
