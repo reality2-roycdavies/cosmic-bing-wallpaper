@@ -34,10 +34,23 @@ This project includes both a simple shell script for quick use and a full native
 Download the latest AppImage from the [Releases](../../releases) page:
 
 ```bash
-# Download (replace URL with actual release URL)
+# Download the AppImage and installer
 wget https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/releases/latest/download/cosmic-bing-wallpaper-x86_64.AppImage
+wget https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/releases/latest/download/install-appimage.sh
 
-# Make executable and run
+# Run the installer (integrates with app launcher)
+chmod +x install-appimage.sh
+./install-appimage.sh cosmic-bing-wallpaper-x86_64.AppImage
+```
+
+The installer will:
+- Create `~/Apps` directory if needed
+- Copy the AppImage there
+- Extract and install the icon
+- Create a `.desktop` file so it appears in your application launcher
+
+**Or run directly without installing:**
+```bash
 chmod +x cosmic-bing-wallpaper-x86_64.AppImage
 ./cosmic-bing-wallpaper-x86_64.AppImage
 ```
