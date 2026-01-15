@@ -278,14 +278,30 @@ cargo build --release
 ./target/release/cosmic-bing-wallpaper
 ```
 
-#### Install Locally
+#### Install and Run
 
 ```bash
-# Using just (recommended)
+# Install to ~/.local/bin with icons and desktop entry
 just install-local
 
-# Or manually copy to your PATH
-cp target/release/cosmic-bing-wallpaper ~/.local/bin/
+# Install with system tray autostart and daily timer
+just install-with-tray
+
+# Uninstall
+just uninstall-local        # Remove app only
+just uninstall-with-tray    # Remove app and all services
+```
+
+#### Other Just Commands
+
+```bash
+just build-release    # Build optimised binary
+just build-debug      # Build debug binary
+just run-release      # Build and run (release)
+just run              # Build and run (debug)
+just check            # Run clippy lints
+just fmt              # Format code
+just clean            # Remove build artifacts
 ```
 
 ### Option 3: Shell Script Only
