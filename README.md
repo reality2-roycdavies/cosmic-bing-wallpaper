@@ -172,7 +172,9 @@ This project includes both a simple shell script for quick use and a full native
 
 ## Screenshots
 
-*Coming soon*
+![Main Window](screenshots/main-window.png)
+
+*Main application window showing today's Bing image, region selector, and auto-update timer controls.*
 
 ## Quick Start
 
