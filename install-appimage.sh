@@ -27,7 +27,7 @@ APP_NAME="cosmic-bing-wallpaper"
 APPIMAGE_NAME="cosmic-bing-wallpaper-x86_64.AppImage"
 APPS_DIR="$HOME/Apps"
 DESKTOP_DIR="$HOME/.local/share/applications"
-AUTOSTART_DIR="$HOME/.config/autostart"
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 SYMBOLIC_ICON_DIR="$HOME/.local/share/icons/hicolor/symbolic/apps"
 
@@ -177,22 +177,67 @@ Keywords=wallpaper;bing;background;desktop;cosmic;
 StartupNotify=true
 EOF
 
-# Set up tray autostart if requested
+# Set up tray autostart and daily timer if requested
 if [ "$INSTALL_TRAY" = true ]; then
-    info "Setting up system tray autostart..."
-    mkdir -p "$AUTOSTART_DIR"
+    info "Setting up systemd services for tray and daily updates..."
+    mkdir -p "$SYSTEMD_USER_DIR"
 
-    cat > "$AUTOSTART_DIR/cosmic-bing-wallpaper-tray.desktop" << EOF
-[Desktop Entry]
-Name=Bing Wallpaper Tray
-Comment=System tray for Bing Wallpaper
-Exec=$DEST_APPIMAGE --tray
-Icon=io.github.cosmic-bing-wallpaper
-Terminal=false
-Type=Application
-X-GNOME-Autostart-enabled=true
+    # Create tray service (starts on COSMIC session)
+    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper-tray.service" << EOF
+[Unit]
+Description=Bing Wallpaper system tray for COSMIC desktop
+After=cosmic-session.target
+PartOf=cosmic-session.target
+
+[Service]
+Type=simple
+ExecStart=$DEST_APPIMAGE --tray
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=cosmic-session.target
 EOF
-    info "Tray will start automatically on next login"
+
+    # Create daily fetch service
+    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.service" << EOF
+[Unit]
+Description=Fetch and set Bing daily wallpaper for COSMIC desktop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$DEST_APPIMAGE --fetch-and-apply
+Environment=HOME=$HOME
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/$(id -u)
+
+[Install]
+WantedBy=default.target
+EOF
+
+    # Create daily timer
+    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.timer" << EOF
+[Unit]
+Description=Daily Bing wallpaper update timer
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+OnBootSec=5min
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    # Reload and enable services
+    systemctl --user daemon-reload
+    systemctl --user enable cosmic-bing-wallpaper-tray.service
+    systemctl --user enable --now cosmic-bing-wallpaper.timer
+    info "Tray and daily timer installed and enabled"
 fi
 
 # Update desktop database
@@ -214,9 +259,10 @@ echo ""
 echo "Installed to: $DEST_APPIMAGE"
 echo "Desktop file: $DESKTOP_DIR/cosmic-bing-wallpaper.desktop"
 if [ "$INSTALL_TRAY" = true ]; then
-    echo "Tray autostart: $AUTOSTART_DIR/cosmic-bing-wallpaper-tray.desktop"
+    echo "Systemd services: tray + daily timer installed"
     echo ""
-    echo -e "${CYAN}To start the tray now:${NC} $DEST_APPIMAGE --tray &"
+    echo -e "${CYAN}To start the tray now:${NC}"
+    echo "  systemctl --user start cosmic-bing-wallpaper-tray.service"
 fi
 echo ""
 echo "To uninstall, run:"
@@ -225,5 +271,9 @@ echo "  rm \"$DESKTOP_DIR/cosmic-bing-wallpaper.desktop\""
 echo "  rm \"$ICON_DIR/io.github.cosmic-bing-wallpaper.svg\""
 echo "  rm \"$SYMBOLIC_ICON_DIR/io.github.cosmic-bing-wallpaper-symbolic.svg\""
 if [ "$INSTALL_TRAY" = true ]; then
-    echo "  rm \"$AUTOSTART_DIR/cosmic-bing-wallpaper-tray.desktop\""
+    echo "  systemctl --user disable --now cosmic-bing-wallpaper-tray.service"
+    echo "  systemctl --user disable --now cosmic-bing-wallpaper.timer"
+    echo "  rm \"$SYSTEMD_USER_DIR/cosmic-bing-wallpaper-tray.service\""
+    echo "  rm \"$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.service\""
+    echo "  rm \"$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.timer\""
 fi

@@ -7,12 +7,30 @@
 //! ## Features
 //! - Persistent tray icon in the system status area
 //! - Right-click menu with common actions
+//! - Daily update timer management
 //! - Runs independently of the main GUI window
 
 use ksni::{Tray, TrayService};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+/// Check if the daily timer is enabled
+fn is_timer_enabled() -> bool {
+    Command::new("systemctl")
+        .args(["--user", "is-enabled", "cosmic-bing-wallpaper.timer"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Toggle the daily update timer
+fn toggle_timer(enable: bool) {
+    let action = if enable { "enable" } else { "disable" };
+    let _ = Command::new("systemctl")
+        .args(["--user", action, "--now", "cosmic-bing-wallpaper.timer"])
+        .spawn();
+}
 
 /// The system tray implementation
 #[derive(Debug)]
@@ -44,6 +62,13 @@ impl Tray for BingWallpaperTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
 
+        let timer_enabled = is_timer_enabled();
+        let timer_label = if timer_enabled {
+            "Daily Update: On ✓"
+        } else {
+            "Daily Update: Off"
+        };
+
         vec![
             StandardItem {
                 label: "Fetch Today's Wallpaper".to_string(),
@@ -60,6 +85,17 @@ impl Tray for BingWallpaperTray {
                 ..Default::default()
             }
             .into(),
+            MenuItem::Separator,
+            StandardItem {
+                label: timer_label.to_string(),
+                icon_name: if timer_enabled { "appointment-recurring" } else { "appointment-missed" }.to_string(),
+                activate: Box::new(move |_| {
+                    toggle_timer(!timer_enabled);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            MenuItem::Separator,
             StandardItem {
                 label: "Open Application".to_string(),
                 icon_name: "preferences-desktop-wallpaper".to_string(),
