@@ -32,17 +32,26 @@ fmt:
 clean:
     cargo clean
 
-# Install to system
+# Install to system (requires destdir variable, e.g., just destdir=/usr install)
 install:
     install -Dm0755 target/release/{{name}} {{destdir}}/usr/bin/{{name}}
     install -Dm0644 resources/{{appid}}.desktop {{destdir}}/usr/share/applications/{{appid}}.desktop
+    install -Dm0644 resources/{{name}}.svg {{destdir}}/usr/share/icons/hicolor/scalable/apps/{{name}}.svg
 
-# Install to local user
+# Install to local user (with icon and desktop entry)
 install-local:
     mkdir -p ~/.local/bin
     cp target/release/{{name}} ~/.local/bin/
     mkdir -p ~/.local/share/applications
     cp resources/{{appid}}.desktop ~/.local/share/applications/
+    mkdir -p ~/.local/share/icons/hicolor/scalable/apps
+    cp resources/{{name}}.svg ~/.local/share/icons/hicolor/scalable/apps/
+
+# Uninstall from local user
+uninstall-local:
+    rm -f ~/.local/bin/{{name}}
+    rm -f ~/.local/share/applications/{{appid}}.desktop
+    rm -f ~/.local/share/icons/hicolor/scalable/apps/{{name}}.svg
 
 # Build and run
 br: build-debug run
