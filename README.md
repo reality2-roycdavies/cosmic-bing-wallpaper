@@ -133,9 +133,13 @@ The human becomes an **editor, tester, and director**—roles that require under
 | Resource | Description |
 |----------|-------------|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Technical journey from concept to release |
-| [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | Analysis of patterns in AI-human collaboration |
-| [RETROSPECTIVE.md](RETROSPECTIVE.md) | What worked, what didn't, and lessons learned |
-| [transcripts/](transcripts/) | Complete conversation logs (raw JSONL + readable Markdown) |
+| [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | 13 themes identified in AI-human collaboration patterns |
+| [RETROSPECTIVE.md](RETROSPECTIVE.md) | What worked, what didn't, and lessons for future projects |
+| **Conversation Transcripts** | |
+| [Part 1: Creation](transcripts/CONVERSATION-PART1-CREATION.md) | Initial development from shell script to GUI application |
+| [Part 2: Refinement](transcripts/CONVERSATION-PART2-REFINEMENT.md) | Bug fixes, system tray, systemd integration, packaging |
+| [Part 3: Code Review](transcripts/CONVERSATION-PART3-CODE-REVIEW.md) | Edge case analysis and 13 fixes |
+| [Raw transcripts](transcripts/) | JSONL files for programmatic analysis |
 
 ---
 
