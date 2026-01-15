@@ -1,6 +1,6 @@
 # Development Journey: cosmic-bing-wallpaper
 
-This document chronicles the development of cosmic-bing-wallpaper from initial concept to release, created collaboratively between a developer and Claude (Anthropic's AI). It's intended as an educational resource for developers interested in building desktop applications for the COSMIC desktop environment.
+This document chronicles the development of cosmic-bing-wallpaper from initial concept to release, created collaboratively between [Dr. Roy C. Davies](https://roycdavies.github.io) and Claude (Anthropic's AI). It's intended as an educational resource for developers interested in building desktop applications for the COSMIC desktop environment.
 
 ## The Initial Idea
 
@@ -325,4 +325,4 @@ cosmic-bing-wallpaper/
 
 ---
 
-*This project was developed as a collaboration between a human developer and Claude, demonstrating how AI can assist with real-world software development while the human maintains creative control and makes final decisions.*
+*This project was developed as a collaboration between [Dr. Roy C. Davies](https://roycdavies.github.io) and Claude, demonstrating how AI can assist with real-world software development while the human maintains creative control and makes final decisions.*
