@@ -60,17 +60,20 @@ uninstall-local:
 
 # Install with system tray autostart
 install-with-tray: install-local
+    #!/bin/bash
     mkdir -p ~/.config/autostart
-    @echo '[Desktop Entry]' > ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo 'Name=Bing Wallpaper Tray' >> ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo 'Comment=System tray for Bing Wallpaper' >> ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo 'Exec={{name}} --tray' >> ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo 'Icon={{appid}}' >> ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo 'Terminal=false' >> ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo 'Type=Application' >> ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo 'X-GNOME-Autostart-enabled=true' >> ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
-    @echo "Tray autostart installed. It will start on next login."
-    @echo "To start now: {{name}} --tray &"
+    printf '%s\n' \
+        '[Desktop Entry]' \
+        'Name=Bing Wallpaper Tray' \
+        'Comment=System tray for Bing Wallpaper' \
+        "Exec=$HOME/.local/bin/cosmic-bing-wallpaper --tray" \
+        'Icon=io.github.cosmic-bing-wallpaper' \
+        'Terminal=false' \
+        'Type=Application' \
+        'X-GNOME-Autostart-enabled=true' \
+        > ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop
+    echo "Tray autostart installed. It will start on next login."
+    echo "To start now: $HOME/.local/bin/cosmic-bing-wallpaper --tray &"
 
 # Uninstall including tray autostart
 uninstall-with-tray: uninstall-local
