@@ -78,12 +78,13 @@ fi
 # We use Python instead of jq because:
 # - jq is not installed by default on many systems
 # - Python 3 is almost always available on modern Linux
+# The JSON is piped via stdin to avoid shell injection issues
 # The NBSP trick preserves spaces in the copyright string during read parsing
 # -----------------------------------------------------------------------------
-read -r IMAGE_PATH COPYRIGHT <<< $(python3 -c "
+read -r IMAGE_PATH COPYRIGHT <<< $(echo "$BING_JSON" | python3 -c "
 import json
 import sys
-data = json.loads('''$BING_JSON''')
+data = json.load(sys.stdin)
 img = data.get('images', [{}])[0]
 url = img.get('url', '')
 copyright = img.get('copyright', '')

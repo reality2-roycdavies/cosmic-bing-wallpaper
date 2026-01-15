@@ -28,6 +28,78 @@ This application was created collaboratively by [Dr. Roy C. Davies](https://royc
 >
 > **Testing has become even more important than before.** When you don't fully understand the code, your ability to verify it works correctly becomes your primary contribution. Knowing *what* to test, *how* to test it, and recognising when something isn't quite right—these skills are now more valuable than ever.
 
+### Skills Required for AI-Assisted Development
+
+**What skills does a human need to replicate this project?**
+
+The human needs *technical literacy* but not *programming expertise*. Think of it as the difference between being able to read a map versus being a cartographer.
+
+| Skill Category | Required | Not Required |
+|---------------|----------|--------------|
+| **Programming** | Ability to read code and understand *what* it does | Writing code, knowing syntax, understanding libraries |
+| **Technical concepts** | Understanding of files, paths, processes, services | Deep knowledge of any specific technology |
+| **Linux** | Comfort with terminal, basic commands (`cd`, `ls`, `cargo build`) | System administration, shell scripting |
+| **Architecture** | Grasp of how software components fit together | Design patterns, framework internals |
+| **Testing** | Methodical approach: try things, observe, report clearly | Automated testing, debugging tools |
+| **Communication** | Precise description of problems and desired outcomes | Technical jargon or implementation details |
+
+**The technical skill level:**
+
+You need to be someone who:
+- Can follow technical instructions without hand-holding
+- Understands that software has configuration files, services, and dependencies
+- Can recognise when error output indicates a problem (even without understanding the details)
+- Is comfortable running commands in a terminal
+- Can describe what they observe precisely ("the image appears in the right third of the box" vs "it's broken")
+
+You do **not** need to:
+- Know Rust, Python, or any specific language
+- Understand the libcosmic framework or iced GUI toolkit
+- Know how systemd works internally
+- Be able to write or debug code yourself
+
+**Approximate skill level:** A technically-inclined person who has installed Linux, configured some software, and isn't afraid of the command line. Perhaps someone who has done light scripting or web development, or a "power user" who enjoys tinkering. Not a professional developer, but not computer-naive either.
+
+**The minimum viable skill set:**
+1. **Technical comfort** — not intimidated by terminals, config files, or error messages
+2. **Methodical testing** — systematically verify functionality, observe carefully, report precisely
+3. **Domain understanding** — know what the software should do from a user's perspective
+4. **Clear communication** — articulate requirements and problems without ambiguity
+5. **Patience and persistence** — some problems take multiple iterations to solve
+
+**What would this project take without AI assistance?**
+
+For a solo developer with moderate Rust experience:
+- Learning libcosmic/iced framework: **1-2 weeks**
+- Core application development: **1-2 weeks**
+- System tray implementation: **3-5 days**
+- Systemd integration and packaging: **3-5 days**
+- Testing and bug fixing: **1 week**
+- **Total estimate: 4-6 weeks**
+
+For a developer new to Rust:
+- Learning Rust basics: **2-4 weeks**
+- Plus all the above: **4-6 weeks**
+- **Total estimate: 6-10 weeks**
+
+With AI assistance, the same scope was completed in **~6 hours of active work**—a productivity multiplier of roughly **50-100x** for this type of project.
+
+### Lessons Learned (Retrospective)
+
+After completion, we analysed what worked and what could have been better:
+
+| What Worked | What Didn't |
+|-------------|-------------|
+| Organic, iterative development | Excessive iteration on "simple" problems (8+ attempts for image centering) |
+| Human testing caught every real bug | Platform knowledge gaps (COSMIC specifics learned by trial and error) |
+| The "no code" rule forced clear communication | Best practices not applied automatically (had to retrofit later) |
+| Dedicated code review phase found 13 issues | All testing was manual; no automation |
+| Documentation created alongside development | Scope grew without explicit milestone acknowledgments |
+
+**Key insight for future projects:** Earlier and more frequent code reviews, upfront platform research, and explicit prompts for "what could go wrong?" would have made the process smoother.
+
+*See [RETROSPECTIVE.md](RETROSPECTIVE.md) for the complete analysis.*
+
 ### What the Thematic Analysis Revealed
 
 A thematic analysis of our conversation transcripts (also performed by Claude, but only after I asked for it) identified key patterns:
@@ -62,6 +134,7 @@ The human becomes an **editor, tester, and director**—roles that require under
 |----------|-------------|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Technical journey from concept to release |
 | [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | Analysis of patterns in AI-human collaboration |
+| [RETROSPECTIVE.md](RETROSPECTIVE.md) | What worked, what didn't, and lessons learned |
 | [transcripts/](transcripts/) | Complete conversation logs (raw JSONL + readable Markdown) |
 
 ---

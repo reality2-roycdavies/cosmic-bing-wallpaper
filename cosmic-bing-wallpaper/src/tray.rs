@@ -16,6 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
 
+use crate::config::Config;
+
 /// Check if the daily timer is enabled
 fn is_timer_enabled() -> bool {
     Command::new("systemctl")
@@ -77,12 +79,32 @@ impl Tray for BingWallpaperTray {
                 label: "Fetch Today's Wallpaper".to_string(),
                 icon_name: "emblem-downloads".to_string(),
                 activate: Box::new(|_| {
-                    // Run fetch-and-apply in background
+                    // Run fetch-and-apply in background with notification
                     std::thread::spawn(|| {
                         let exe = std::env::current_exe().unwrap_or_default();
-                        let _ = Command::new(exe)
+                        // Use status() to wait for completion so we can notify
+                        match Command::new(&exe)
                             .arg("--fetch-and-apply")
-                            .spawn();
+                            .status()
+                        {
+                            Ok(status) if status.success() => {
+                                // Send success notification
+                                let _ = Command::new("notify-send")
+                                    .args(["-i", "preferences-desktop-wallpaper",
+                                           "Bing Wallpaper", "Today's wallpaper has been applied!"])
+                                    .spawn();
+                            }
+                            Ok(_) => {
+                                // Send failure notification
+                                let _ = Command::new("notify-send")
+                                    .args(["-u", "critical", "-i", "dialog-error",
+                                           "Bing Wallpaper", "Failed to fetch or apply wallpaper"])
+                                    .spawn();
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to run fetch: {}", e);
+                            }
+                        }
                     });
                 }),
                 ..Default::default()
@@ -117,10 +139,9 @@ impl Tray for BingWallpaperTray {
                 label: "Open Wallpaper Folder".to_string(),
                 icon_name: "folder-pictures".to_string(),
                 activate: Box::new(|_| {
-                    if let Some(home) = dirs::home_dir() {
-                        let wallpaper_dir = home.join("Pictures/BingWallpapers");
-                        let _ = open::that(wallpaper_dir);
-                    }
+                    // Read wallpaper directory from config instead of hardcoding
+                    let config = Config::load();
+                    let _ = open::that(&config.wallpaper_dir);
                 }),
                 ..Default::default()
             }

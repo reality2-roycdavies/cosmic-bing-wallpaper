@@ -34,6 +34,7 @@
 //! - Restarting cosmic-bg process to apply changes
 //! - Managing systemd user timers for automatic updates
 
+use chrono;
 use cosmic::app::Core;
 use cosmic::iced::{Length, ContentFit};
 use cosmic::widget::{self, button, column, container, row, text, dropdown, scrollable};
@@ -74,6 +75,8 @@ pub struct BingWallpaper {
     market_names: Vec<String>,
     /// Current status of the systemd auto-update timer
     timer_status: TimerStatus,
+    /// Path of wallpaper pending deletion (for confirmation)
+    pending_delete: Option<PathBuf>,
 }
 
 /// Represents a wallpaper in the download history.
@@ -151,8 +154,12 @@ pub enum Message {
     ShowMain,
     /// Rescan wallpaper directory for history items
     RefreshHistory,
-    /// Delete a wallpaper from history
-    DeleteHistoryItem(PathBuf),
+    /// Request to delete a wallpaper (shows confirmation)
+    RequestDeleteHistoryItem(PathBuf),
+    /// Confirm deletion of pending wallpaper
+    ConfirmDeleteHistoryItem,
+    /// Cancel pending deletion
+    CancelDeleteHistoryItem,
 
     // === Timer Management ===
     /// Query systemd for timer status
@@ -231,12 +238,18 @@ impl Application for BingWallpaper {
             view_mode: ViewMode::Main,
             market_names,
             timer_status: TimerStatus::Checking,
+            pending_delete: None,
         };
 
-        // Trigger startup actions: fetch today's image and check timer status
-        let fetch_task = Task::perform(async {}, |_| Action::App(Message::FetchToday));
+        // Trigger startup actions: optionally fetch today's image and check timer status
         let timer_task = Task::perform(async {}, |_| Action::App(Message::CheckTimerStatus));
-        (app, Task::batch([fetch_task, timer_task]))
+
+        if app.config.fetch_on_startup {
+            let fetch_task = Task::perform(async {}, |_| Action::App(Message::FetchToday));
+            (app, Task::batch([fetch_task, timer_task]))
+        } else {
+            (app, timer_task)
+        }
     }
 
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
@@ -298,7 +311,19 @@ impl Application for BingWallpaper {
                 match result {
                     Ok(path) => {
                         self.image_path = Some(path);
-                        self.status_message = "Image downloaded! Click 'Apply' to set as wallpaper.".to_string();
+
+                        // Clean up old wallpapers based on keep_days setting
+                        let deleted = cleanup_old_wallpapers(&self.config.wallpaper_dir, self.config.keep_days);
+                        if deleted > 0 {
+                            self.status_message = format!(
+                                "Image downloaded! ({} old wallpaper{} cleaned up). Click 'Apply' to set as wallpaper.",
+                                deleted,
+                                if deleted == 1 { "" } else { "s" }
+                            );
+                        } else {
+                            self.status_message = "Image downloaded! Click 'Apply' to set as wallpaper.".to_string();
+                        }
+
                         self.history = scan_history(&self.config.wallpaper_dir);
                     }
                     Err(e) => {
@@ -363,13 +388,31 @@ impl Application for BingWallpaper {
                 Task::none()
             }
 
-            Message::DeleteHistoryItem(path) => {
-                if let Err(e) = std::fs::remove_file(&path) {
-                    self.status_message = format!("Failed to delete: {}", e);
-                } else {
-                    self.history = scan_history(&self.config.wallpaper_dir);
-                    self.status_message = "Image deleted".to_string();
+            Message::RequestDeleteHistoryItem(path) => {
+                let filename = path.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("this image")
+                    .to_string();
+                self.pending_delete = Some(path);
+                self.status_message = format!("Delete {}? Click 'Confirm' to delete or 'Cancel' to keep.", filename);
+                Task::none()
+            }
+
+            Message::ConfirmDeleteHistoryItem => {
+                if let Some(path) = self.pending_delete.take() {
+                    if let Err(e) = std::fs::remove_file(&path) {
+                        self.status_message = format!("Failed to delete: {}", e);
+                    } else {
+                        self.history = scan_history(&self.config.wallpaper_dir);
+                        self.status_message = "Image deleted".to_string();
+                    }
                 }
+                Task::none()
+            }
+
+            Message::CancelDeleteHistoryItem => {
+                self.pending_delete = None;
+                self.status_message = "Delete cancelled".to_string();
                 Task::none()
             }
 
@@ -640,8 +683,19 @@ impl BingWallpaper {
                 let apply_btn = button::suggested("Apply")
                     .on_press(Message::ApplyHistoryWallpaper(item_path));
 
-                let delete_btn = button::destructive("Delete")
-                    .on_press(Message::DeleteHistoryItem(delete_path));
+                // Show confirm/cancel if this item is pending deletion, otherwise show delete button
+                let is_pending = self.pending_delete.as_ref() == Some(&item.path);
+                let delete_btn: Element<_> = if is_pending {
+                    row()
+                        .spacing(8)
+                        .push(button::destructive("Confirm").on_press(Message::ConfirmDeleteHistoryItem))
+                        .push(button::standard("Cancel").on_press(Message::CancelDeleteHistoryItem))
+                        .into()
+                } else {
+                    button::destructive("Delete")
+                        .on_press(Message::RequestDeleteHistoryItem(delete_path))
+                        .into()
+                };
 
                 let item_row = row()
                     .spacing(16)
@@ -680,6 +734,62 @@ impl BingWallpaper {
             .height(Length::Fill)
             .into()
     }
+}
+
+/// Cleans up old wallpapers that exceed the keep_days limit.
+///
+/// Looks at all bing-*.jpg files in the wallpaper directory, parses their dates,
+/// and removes any that are older than the configured keep_days setting.
+///
+/// # Arguments
+/// * `wallpaper_dir` - Path to the wallpaper directory
+/// * `keep_days` - Number of days to keep wallpapers (0 means keep forever)
+///
+/// # Returns
+/// Number of files deleted
+fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
+    if keep_days == 0 {
+        return 0; // 0 means keep forever
+    }
+
+    let dir = std::path::Path::new(wallpaper_dir);
+    if !dir.exists() {
+        return 0;
+    }
+
+    let cutoff_date = chrono::Local::now().date_naive() - chrono::Duration::days(keep_days as i64);
+    let mut deleted = 0;
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let filename = path.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+
+            // Only process bing wallpaper files
+            if !filename.starts_with("bing-") || !filename.ends_with(".jpg") {
+                continue;
+            }
+
+            // Extract date from filename (last 10 chars before .jpg should be YYYY-MM-DD)
+            let name_without_ext = filename.strip_suffix(".jpg").unwrap_or(filename);
+            if name_without_ext.len() < 10 {
+                continue;
+            }
+
+            let date_str = &name_without_ext[name_without_ext.len() - 10..];
+            if let Ok(file_date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                if file_date < cutoff_date {
+                    if std::fs::remove_file(&path).is_ok() {
+                        deleted += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    deleted
 }
 
 /// Scans the wallpaper directory and returns a list of history items.
@@ -770,36 +880,41 @@ async fn check_timer_status() -> TimerStatus {
             let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if status == "active" {
                 // Timer is active - get the next scheduled run time
+                // Use systemctl show with multiple properties to get reliable data
                 let next_output = tokio::process::Command::new("systemctl")
-                    .args(["--user", "show", "cosmic-bing-wallpaper.timer", "--property=NextElapseUSecRealtime", "--value"])
+                    .args(["--user", "show", "cosmic-bing-wallpaper.timer",
+                           "--property=NextElapseUSecRealtime"])
                     .output()
                     .await;
 
                 let next_run = match next_output {
                     Ok(out) => {
                         let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        if raw.is_empty() {
-                            "Unknown".to_string()
+                        // Parse the property output (format: NextElapseUSecRealtime=TIMESTAMP)
+                        let timestamp = raw.strip_prefix("NextElapseUSecRealtime=")
+                            .unwrap_or(&raw);
+
+                        if timestamp.is_empty() || timestamp == "n/a" {
+                            "Scheduled (time unknown)".to_string()
                         } else {
-                            // Try to get human-readable time from list-timers output
-                            let list_output = tokio::process::Command::new("systemctl")
-                                .args(["--user", "list-timers", "cosmic-bing-wallpaper.timer", "--no-pager"])
-                                .output()
-                                .await;
-                            match list_output {
-                                Ok(o) => {
-                                    let lines = String::from_utf8_lossy(&o.stdout);
-                                    // Extract the NEXT column (first 4 words of data line)
-                                    lines.lines()
-                                        .nth(1) // Skip header line
-                                        .and_then(|line| line.split_whitespace().take(4).collect::<Vec<_>>().join(" ").into())
-                                        .unwrap_or_else(|| raw)
+                            // The timestamp is in microseconds since epoch or a formatted string
+                            // Try to parse and format it nicely
+                            if let Ok(usecs) = timestamp.parse::<u64>() {
+                                // Convert microseconds to seconds and format
+                                let secs = usecs / 1_000_000;
+                                if let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
+                                    let local: chrono::DateTime<chrono::Local> = dt.into();
+                                    local.format("%a %b %d %H:%M").to_string()
+                                } else {
+                                    "Scheduled".to_string()
                                 }
-                                Err(_) => raw
+                            } else {
+                                // Already a formatted string, use as-is
+                                timestamp.to_string()
                             }
                         }
                     }
-                    Err(_) => "Unknown".to_string()
+                    Err(_) => "Scheduled (time unknown)".to_string()
                 };
                 TimerStatus::Installed { next_run }
             } else {
@@ -880,17 +995,19 @@ async fn install_timer() -> Result<(), String> {
     };
 
     // Write service file
+    // Note: We don't hardcode DISPLAY or WAYLAND_DISPLAY because:
+    // 1. COSMIC is Wayland-native and inherits the session environment
+    // 2. The service runs under the user's graphical session via default.target
+    // 3. Hardcoded values like :0 or wayland-1 may not match the actual session
     let service_content = format!(r#"[Unit]
 Description=Fetch and set Bing daily wallpaper for COSMIC desktop
-After=network-online.target
+After=network-online.target graphical-session.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 ExecStart={}
 Environment=HOME=%h
-Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-1
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 
 [Install]
@@ -1045,11 +1162,22 @@ async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // Always restart cosmic-bg to ensure the new wallpaper is loaded
-    let _ = tokio::process::Command::new("cosmic-bg")
+    tokio::process::Command::new("cosmic-bg")
         .spawn()
         .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
 
-    Ok(())
+    // Wait a moment and verify cosmic-bg is running
+    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+    let check = tokio::process::Command::new("pgrep")
+        .args(["-x", "cosmic-bg"])
+        .output()
+        .await;
+
+    match check {
+        Ok(output) if output.status.success() => Ok(()),
+        _ => Err("cosmic-bg failed to start - wallpaper may not have been applied".to_string())
+    }
 }
 
 /// Public wrapper for headless wallpaper application.

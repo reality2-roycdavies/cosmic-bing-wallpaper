@@ -22,10 +22,21 @@
 
 use serde::Deserialize;
 use std::path::Path;
-use chrono::Local;
+use std::time::Duration;
 
 /// Base URL for the Bing Homepage Image Archive API.
 const BING_API_URL: &str = "https://www.bing.com/HPImageArchive.aspx";
+
+/// HTTP request timeout in seconds
+const REQUEST_TIMEOUT_SECS: u64 = 30;
+
+/// Creates an HTTP client with appropriate timeout settings.
+fn create_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))
+}
 
 /// Raw API response from Bing.
 ///
@@ -108,9 +119,17 @@ pub async fn fetch_bing_image_info(market: &str) -> Result<BingImage, String> {
         BING_API_URL, market
     );
 
-    let response = reqwest::get(&url)
+    let client = create_client()?;
+    let response = client.get(&url)
+        .send()
         .await
-        .map_err(|e| format!("Failed to fetch Bing API: {}", e))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Request timed out - check your internet connection".to_string()
+            } else {
+                format!("Failed to fetch Bing API: {}", e)
+            }
+        })?;
 
     let api_response: BingApiResponse = response
         .json()
@@ -141,16 +160,22 @@ pub async fn fetch_bing_image_info(market: &str) -> Result<BingImage, String> {
 /// * `Err(String)` - Error message if directory creation, download, or save fails
 ///
 /// # Filename Format
-/// Images are saved as `bing-{market}-YYYY-MM-DD.jpg` where the date is the
-/// local system date at download time.
+/// Images are saved as `bing-{market}-YYYY-MM-DD.jpg` where the date is from
+/// Bing's API response (the date the image was featured), not the local system date.
 pub async fn download_image(image: &BingImage, wallpaper_dir: &str, market: &str) -> Result<String, String> {
     // Create wallpaper directory if needed
     let dir = Path::new(wallpaper_dir);
     std::fs::create_dir_all(dir)
         .map_err(|e| format!("Failed to create wallpaper directory: {}", e))?;
 
-    // Generate filename based on market and local date
-    let date = Local::now().format("%Y-%m-%d");
+    // Generate filename based on market and Bing's image date (not local date)
+    // Bing returns date as YYYYMMDD, convert to YYYY-MM-DD for filename
+    let date = if image.date.len() == 8 {
+        format!("{}-{}-{}", &image.date[0..4], &image.date[4..6], &image.date[6..8])
+    } else {
+        // Fallback to raw date if format is unexpected
+        image.date.clone()
+    };
     let filename = format!("bing-{}-{}.jpg", market, date);
     let filepath = dir.join(&filename);
     let filepath_str = filepath.to_string_lossy().to_string();
@@ -160,15 +185,34 @@ pub async fn download_image(image: &BingImage, wallpaper_dir: &str, market: &str
         return Ok(filepath_str);
     }
 
-    // Download the image bytes
-    let response = reqwest::get(&image.url)
+    // Download the image bytes with timeout
+    let client = create_client()?;
+    let response = client.get(&image.url)
+        .send()
         .await
-        .map_err(|e| format!("Failed to download image: {}", e))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Download timed out - check your internet connection".to_string()
+            } else {
+                format!("Failed to download image: {}", e)
+            }
+        })?;
 
     let bytes = response
         .bytes()
         .await
         .map_err(|e| format!("Failed to read image data: {}", e))?;
+
+    // Validate that we received an actual image (check magic bytes)
+    // JPEG starts with FF D8 FF, PNG starts with 89 50 4E 47
+    if bytes.len() < 4 {
+        return Err("Downloaded file is too small to be an image".to_string());
+    }
+    let is_jpeg = bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
+    let is_png = bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
+    if !is_jpeg && !is_png {
+        return Err("Downloaded content is not a valid image (may be an error page)".to_string());
+    }
 
     // Save to disk
     std::fs::write(&filepath, bytes)

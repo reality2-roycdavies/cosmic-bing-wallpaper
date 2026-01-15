@@ -22,6 +22,15 @@ through to a working COSMIC application with GUI.
 This session covers code review, bug fixes, GitHub release preparation,
 system tray implementation, systemd integration, and documentation.
 
+### Part 3: Code Review & Edge Cases
+- **`conversation-part3-code-review.jsonl`** - Raw JSONL transcript
+- **`CONVERSATION-PART3-CODE-REVIEW.md`** - Readable Markdown version
+
+This session covers a comprehensive code review identifying 13 edge cases
+and potential issues, followed by fixes for all of them. Topics include:
+HTTP timeouts, image validation, wallpaper cleanup, delete confirmation,
+tilde expansion, tray notifications, and more.
+
 ## Format Notes
 
 ### JSONL Files

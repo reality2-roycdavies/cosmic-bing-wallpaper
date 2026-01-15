@@ -139,3 +139,9 @@ if __name__ == '__main__':
     part2_md = script_dir / 'CONVERSATION-PART2-REFINEMENT.md'
     if part2_jsonl.exists():
         convert_jsonl_to_markdown(part2_jsonl, part2_md)
+
+    # Convert Part 3: Code Review & Edge Cases
+    part3_jsonl = script_dir / 'conversation-part3-code-review.jsonl'
+    part3_md = script_dir / 'CONVERSATION-PART3-CODE-REVIEW.md'
+    if part3_jsonl.exists():
+        convert_jsonl_to_markdown(part3_jsonl, part3_md)

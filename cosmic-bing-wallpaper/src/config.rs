@@ -67,9 +67,17 @@ pub struct Config {
     /// Whether automatic daily updates are enabled (via systemd timer).
     /// Note: This flag is stored but the actual timer is managed separately.
     pub auto_update: bool,
-    /// Number of days to keep old wallpapers before cleanup.
-    /// Currently informational; cleanup not yet implemented.
+    /// Number of days to keep old wallpapers before automatic cleanup.
+    /// Set to 0 to keep wallpapers forever. Cleanup runs after each download.
     pub keep_days: u32,
+    /// Whether to automatically fetch today's image when the app starts.
+    /// Disable for metered connections or manual-only operation.
+    #[serde(default = "default_fetch_on_startup")]
+    pub fetch_on_startup: bool,
+}
+
+fn default_fetch_on_startup() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -91,8 +99,25 @@ impl Default for Config {
             market: "en-US".to_string(),
             auto_update: false,
             keep_days: 30,
+            fetch_on_startup: true,
         }
     }
+}
+
+/// Expands a leading tilde (~) in a path to the user's home directory.
+///
+/// This allows users to manually edit config.json with paths like "~/Pictures/..."
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return format!("{}{}", home.display(), &path[1..]);
+        }
+    } else if path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home.to_string_lossy().to_string();
+        }
+    }
+    path.to_string()
 }
 
 impl Config {
@@ -107,11 +132,16 @@ impl Config {
     ///
     /// If the config file doesn't exist or cannot be parsed, returns default values.
     /// This ensures the application always starts with valid configuration.
+    /// Tilde (~) in paths will be expanded to the user's home directory.
     pub fn load() -> Self {
-        Self::config_path()
+        let mut config: Config = Self::config_path()
             .and_then(|path| std::fs::read_to_string(path).ok())
             .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        // Expand tilde in wallpaper_dir for users who manually edit the config
+        config.wallpaper_dir = expand_tilde(&config.wallpaper_dir);
+        config
     }
 
     /// Persists the current configuration to disk.
