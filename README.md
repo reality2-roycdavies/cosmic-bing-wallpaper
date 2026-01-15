@@ -14,6 +14,8 @@ A daily Bing wallpaper manager for the [COSMIC desktop environment](https://syst
 
 This application was created collaboratively by [Dr. Roy C. Davies](https://roycdavies.github.io) and [Claude](https://claude.ai) (Anthropic's AI) using [Claude Code](https://claude.ai/code). From initial idea to fully functional released application—complete with GUI, system tray, systemd integration, and AppImage packaging—in just a few hours of conversation.
 
+**The experiment:** The rule was that the human would write *no code at all*—not even comments, not even git commands. Every line of code, every commit, every file edit was performed by Claude. The human's role was purely to direct, question, test, and decide.
+
 ### Developer Reflection
 
 *From Dr. Roy C. Davies:*
