@@ -75,7 +75,7 @@ def convert_jsonl_to_markdown(jsonl_path, output_path):
         "This is a transcript of the conversation between Dr. Roy C. Davies and Claude",
         "during the development of cosmic-bing-wallpaper.",
         "",
-        "**Note:** Tool outputs have been summarized for readability. See `conversation.jsonl`",
+        "**Note:** Tool outputs have been summarized for readability. See the `.jsonl` file",
         "for the complete raw data including all tool inputs and outputs.",
         "",
         "---",
@@ -83,6 +83,8 @@ def convert_jsonl_to_markdown(jsonl_path, output_path):
     ]
 
     message_count = 0
+    last_speaker = None  # Track who spoke last to avoid repeated headers
+
     for entry in entries:
         entry_type = entry.get('type', '')
 
@@ -93,8 +95,11 @@ def convert_jsonl_to_markdown(jsonl_path, output_path):
             text = extract_text_content(content)
             text = clean_text(text)
             if text and not text.startswith('*[Tool output'):
-                md_lines.append("## Human")
-                md_lines.append("")
+                # Only add header if speaker changed
+                if last_speaker != 'human':
+                    md_lines.append("## Human")
+                    md_lines.append("")
+                    last_speaker = 'human'
                 md_lines.append(text)
                 md_lines.append("")
                 message_count += 1
@@ -106,8 +111,11 @@ def convert_jsonl_to_markdown(jsonl_path, output_path):
             text = extract_text_content(content)
             text = clean_text(text)
             if text:
-                md_lines.append("## Claude")
-                md_lines.append("")
+                # Only add header if speaker changed
+                if last_speaker != 'claude':
+                    md_lines.append("## Claude")
+                    md_lines.append("")
+                    last_speaker = 'claude'
                 md_lines.append(text)
                 md_lines.append("")
                 message_count += 1

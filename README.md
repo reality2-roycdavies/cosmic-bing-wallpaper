@@ -2,11 +2,42 @@
 
 A daily Bing wallpaper manager for the [COSMIC desktop environment](https://system76.com/cosmic) on Linux. Automatically fetches Microsoft Bing's beautiful "Image of the Day" and sets it as your desktop wallpaper.
 
-This project includes both a simple shell script for quick use and a full native COSMIC GUI application.
-
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Rust](https://img.shields.io/badge/rust-2021-orange.svg)
 ![COSMIC](https://img.shields.io/badge/desktop-COSMIC-purple.svg)
+
+---
+
+## About This Project
+
+> **This project is an educational showcase of AI-assisted software development.**
+
+This application was created collaboratively by [Dr. Roy C. Davies](https://roycdavies.github.io) and [Claude](https://claude.ai) (Anthropic's AI) using [Claude Code](https://claude.ai/code). From initial idea to fully functional released application—complete with GUI, system tray, systemd integration, and AppImage packaging—in just a few hours of conversation.
+
+### Developer Reflection
+
+*From Dr. Roy C. Davies:*
+
+> I have learned very little about the actual mechanics of what the app does. Claude wrote the Rust code, the systemd service files, the build scripts. I directed, reviewed, tested, and made decisions—but I couldn't reproduce this from scratch without AI assistance.
+>
+> **Does that matter?** Perhaps not. Software development has always been about standing on the shoulders of giants. AI assistance is simply the next evolution.
+>
+> **Key insight:** While Claude is clever and solves problems well, **it still requires someone to ask the right questions**. The AI doesn't know what you want until you articulate it. It doesn't know something is broken until you test it and report back.
+>
+> **Testing has become even more important than before.** When you don't fully understand the code, your ability to verify it works correctly becomes your primary contribution. Knowing *what* to test, *how* to test it, and recognising when something isn't quite right—these skills are now more valuable than ever.
+
+### Educational Resources
+
+| Resource | Description |
+|----------|-------------|
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Technical journey from concept to release |
+| [transcripts/](transcripts/) | Complete conversation logs (raw JSONL + readable Markdown) |
+
+---
+
+## Overview
+
+This project includes both a simple shell script for quick use and a full native COSMIC GUI application.
 
 ## Features
 
@@ -336,41 +367,6 @@ just run-release      # Build and run
 just check            # Run clippy lints
 just fmt              # Format code
 ```
-
-## About This Project
-
-This project was created collaboratively by [Dr. Roy C. Davies](https://roycdavies.github.io) and [Claude](https://claude.ai) (Anthropic's AI assistant) using [Claude Code](https://claude.ai/code). It demonstrates AI-assisted development of:
-
-- Native Linux desktop applications using Rust
-- Integration with the COSMIC desktop environment
-- Shell scripts for system automation
-- Systemd timer configuration
-- AppImage packaging
-
-### Developer Reflection
-
-*From Dr. Roy C. Davies:*
-
-> This has been an amazing process. From initial idea to a fully functional, released application with GUI, system tray, systemd integration, and AppImage packaging—all accomplished in just a few hours of conversation with Claude.
->
-> However, I must be honest: I have learned very little about the actual mechanics of what the app does. Claude wrote the Rust code, the systemd service files, the build scripts. I directed, reviewed, tested, and made decisions—but I couldn't reproduce this from scratch without AI assistance.
->
-> **Does that matter?**
->
-> Perhaps not. Software development has always been about standing on the shoulders of giants—using libraries, frameworks, and tools we don't fully understand. AI assistance is simply the next evolution. What matters is that the end result works, is maintainable, and solves a real problem.
->
-> **What I learned:**
->
-> This project was both a learning experience and a deliberate test of how far I could push Claude. The answer: remarkably far. But here's the crucial insight—while Claude is clever and solves problems well, **it still requires someone to ask the right questions**. The AI doesn't know what you want until you articulate it. It doesn't know something is broken until you test it and report back.
->
-> In fact, **testing has become even more important than before**. When you don't fully understand the code that's been written, your ability to verify it works correctly becomes your primary contribution. Knowing *what* to test, *how* to test it, and recognising when something isn't quite right—these skills are now more valuable than ever.
->
-> The complete conversation transcripts are available in the [`transcripts/`](transcripts/) folder for those interested in seeing exactly how this collaboration unfolded.
-
-### Educational Resources
-
-- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Technical journey from concept to release
-- **[transcripts/](transcripts/)** - Complete conversation logs (JSONL + Markdown)
 
 ## License
 
