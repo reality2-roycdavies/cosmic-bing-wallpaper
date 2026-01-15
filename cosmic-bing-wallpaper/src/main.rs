@@ -8,15 +8,18 @@
 //! - Previews images before applying as wallpaper
 //! - Maintains a history of downloaded wallpapers
 //! - Integrates with systemd user timers for automatic daily updates
+//! - System tray icon for background operation
 //!
 //! ## Architecture
 //! The application follows the Model-View-Update (MVU) pattern used by iced/libcosmic:
 //! - `app.rs` - Main application state, UI views, and message handling
 //! - `bing.rs` - Bing API client for fetching image metadata and downloading
 //! - `config.rs` - User configuration and regional market definitions
+//! - `tray.rs` - System tray icon and menu
 //!
 //! ## CLI Usage
 //! - No arguments: Launch the GUI application
+//! - `--tray`: Run in system tray only (background mode)
 //! - `--fetch-and-apply`: Fetch today's image and apply as wallpaper (for systemd timer)
 //! - `--help`: Show help message
 //!
@@ -27,32 +30,38 @@
 mod app;
 mod config;
 mod bing;
+mod tray;
 
 use app::BingWallpaper;
 use cosmic::iced::Size;
 
 /// Application entry point.
 ///
-/// Supports two modes:
+/// Supports three modes:
 /// 1. GUI mode (default): Launches the COSMIC application window
-/// 2. CLI mode (`--fetch-and-apply`): Headless fetch and apply for systemd timer
+/// 2. Tray mode (`--tray`): Runs in system tray for background operation
+/// 3. CLI mode (`--fetch-and-apply`): Headless fetch and apply for systemd timer
 fn main() -> cosmic::iced::Result {
     let args: Vec<String> = std::env::args().collect();
 
     // Check for CLI arguments
     if args.len() > 1 {
         match args[1].as_str() {
+            "--tray" | "-t" => {
+                // Run in system tray mode (background)
+                println!("Starting Bing Wallpaper in system tray...");
+                if let Err(e) = tray::run_tray() {
+                    eprintln!("Tray error: {}", e);
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
             "--fetch-and-apply" | "-f" => {
                 // Run in headless mode for systemd timer
                 return run_headless();
             }
             "--help" | "-h" => {
-                println!("Bing Wallpaper for COSMIC Desktop\n");
-                println!("Usage: {} [OPTIONS]\n", args[0]);
-                println!("Options:");
-                println!("  (none)             Launch the GUI application");
-                println!("  --fetch-and-apply  Fetch today's image and apply as wallpaper");
-                println!("  --help             Show this help message");
+                print_help(&args[0]);
                 return Ok(());
             }
             _ => {
@@ -73,6 +82,20 @@ fn main() -> cosmic::iced::Result {
         );
 
     cosmic::app::run::<BingWallpaper>(settings, ())
+}
+
+/// Prints help message
+fn print_help(program: &str) {
+    println!("Bing Wallpaper for COSMIC Desktop\n");
+    println!("Usage: {} [OPTIONS]\n", program);
+    println!("Options:");
+    println!("  (none)             Launch the GUI application");
+    println!("  --tray, -t         Run in system tray (background mode)");
+    println!("  --fetch-and-apply  Fetch today's image and apply as wallpaper");
+    println!("  --help, -h         Show this help message");
+    println!();
+    println!("The system tray mode runs in the background and provides quick");
+    println!("access to wallpaper functions via right-click menu.");
 }
 
 /// Runs the application in headless mode (no GUI).

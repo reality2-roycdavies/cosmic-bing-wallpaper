@@ -33,8 +33,10 @@ cp "$PROJECT_DIR/target/release/cosmic-bing-wallpaper" "$APPDIR/usr/bin/"
 cp "$REPO_DIR/bing-wallpaper.sh" "$APPDIR/usr/share/cosmic-bing-wallpaper/"
 chmod +x "$APPDIR/usr/share/cosmic-bing-wallpaper/bing-wallpaper.sh"
 
-# Copy icon (using full app ID for proper panel icon association)
+# Copy icons (using full app ID for proper panel icon association)
 cp "$PROJECT_DIR/resources/io.github.cosmic-bing-wallpaper.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
+mkdir -p "$APPDIR/usr/share/icons/hicolor/symbolic/apps"
+cp "$PROJECT_DIR/resources/io.github.cosmic-bing-wallpaper-symbolic.svg" "$APPDIR/usr/share/icons/hicolor/symbolic/apps/"
 
 # Copy AppStream metadata
 cp "$PROJECT_DIR/resources/io.github.cosmic-bing-wallpaper.appdata.xml" "$APPDIR/usr/share/metainfo/"

@@ -1,6 +1,6 @@
 [package]
 name = "cosmic-bing-wallpaper"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Your Name"]
 license = "MPL-2.0"
@@ -38,6 +38,9 @@ chrono = "0.4"
 
 # Open URLs/files
 open = "5"
+
+# System tray (StatusNotifierItem protocol)
+ksni = "0.2"
 
 [profile.release]
 lto = true

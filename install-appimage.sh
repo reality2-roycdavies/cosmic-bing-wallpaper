@@ -23,6 +23,7 @@ APPIMAGE_NAME="cosmic-bing-wallpaper-x86_64.AppImage"
 APPS_DIR="$HOME/Apps"
 DESKTOP_DIR="$HOME/.local/share/applications"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+SYMBOLIC_ICON_DIR="$HOME/.local/share/icons/hicolor/symbolic/apps"
 
 # Colors for output
 RED='\033[0;31m'
@@ -83,27 +84,36 @@ else
     chmod +x "$DEST_APPIMAGE"
 fi
 
-# Extract icon from AppImage
-info "Extracting icon..."
+# Extract icons from AppImage
+info "Extracting icons..."
 mkdir -p "$ICON_DIR"
+mkdir -p "$SYMBOLIC_ICON_DIR"
 
 # Create temp directory for extraction
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-# Extract the AppImage to get the icon
+# Extract the AppImage to get the icons
 cd "$TEMP_DIR"
 "$DEST_APPIMAGE" --appimage-extract >/dev/null 2>&1 || true
 
-# Find and copy the icon
+# Find and copy the main icon
 if [ -f "squashfs-root/io.github.cosmic-bing-wallpaper.svg" ]; then
     cp "squashfs-root/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/"
-    info "Icon installed to $ICON_DIR"
+    info "App icon installed"
 elif [ -f "squashfs-root/usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg" ]; then
     cp "squashfs-root/usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/"
-    info "Icon installed to $ICON_DIR"
+    info "App icon installed"
 else
-    warn "Could not extract icon from AppImage"
+    warn "Could not extract app icon from AppImage"
+fi
+
+# Find and copy the symbolic icon (for system tray)
+if [ -f "squashfs-root/usr/share/icons/hicolor/symbolic/apps/io.github.cosmic-bing-wallpaper-symbolic.svg" ]; then
+    cp "squashfs-root/usr/share/icons/hicolor/symbolic/apps/io.github.cosmic-bing-wallpaper-symbolic.svg" "$SYMBOLIC_ICON_DIR/"
+    info "Symbolic icon installed (for system tray)"
+else
+    warn "Could not extract symbolic icon from AppImage"
 fi
 
 cd - >/dev/null
@@ -149,3 +159,4 @@ echo "To uninstall, run:"
 echo "  rm \"$DEST_APPIMAGE\""
 echo "  rm \"$DESKTOP_DIR/cosmic-bing-wallpaper.desktop\""
 echo "  rm \"$ICON_DIR/io.github.cosmic-bing-wallpaper.svg\""
+echo "  rm \"$SYMBOLIC_ICON_DIR/io.github.cosmic-bing-wallpaper-symbolic.svg\""

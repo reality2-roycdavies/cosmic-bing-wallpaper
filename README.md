@@ -18,6 +18,12 @@ This project includes both a simple shell script for quick use and a full native
 - **Auto-Update Timer**: Install/uninstall systemd timer directly from the app
 - **Status Display**: Shows next scheduled update time
 
+### System Tray Mode
+- **Background Operation**: Run quietly in the system tray
+- **Quick Access**: Right-click menu for common actions
+- **Fetch Wallpaper**: Download today's image without opening the full app
+- **Open App**: Launch the full GUI when needed
+
 ### Shell Script
 - Lightweight alternative for automation
 - Can be run via cron or systemd timer
@@ -70,6 +76,7 @@ sudo apt install -y \
     cmake \
     git \
     just \
+    libdbus-1-dev \
     libexpat1-dev \
     libfontconfig-dev \
     libfreetype-dev \
@@ -82,6 +89,7 @@ sudo apt install -y \
 sudo dnf install -y \
     cargo \
     cmake \
+    dbus-devel \
     expat-devel \
     fontconfig-devel \
     freetype-devel \
@@ -98,6 +106,7 @@ sudo pacman -S --needed \
     base-devel \
     cargo \
     cmake \
+    dbus \
     expat \
     fontconfig \
     freetype2 \
@@ -171,6 +180,45 @@ systemctl --user status cosmic-bing-wallpaper.timer
 ./uninstall-timer.sh
 ```
 
+## System Tray Mode
+
+Run the app in the background with a system tray icon for quick access:
+
+```bash
+# From installed binary
+cosmic-bing-wallpaper --tray
+
+# Or from AppImage
+./cosmic-bing-wallpaper-x86_64.AppImage --tray
+```
+
+The tray icon provides a right-click menu with:
+- **Fetch Today's Wallpaper**: Download and apply the latest Bing image
+- **Open Application**: Launch the full GUI window
+- **Open Wallpaper Folder**: Browse downloaded images
+- **Quit**: Exit the tray application
+
+### Auto-start Tray on Login
+
+**Using just (recommended for source builds):**
+```bash
+just install-with-tray
+```
+
+This installs the app and sets up the tray to start automatically on login.
+
+**Manual setup:**
+```bash
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop << EOF
+[Desktop Entry]
+Name=Bing Wallpaper Tray
+Exec=cosmic-bing-wallpaper --tray
+Type=Application
+X-GNOME-Autostart-enabled=true
+EOF
+```
+
 ## Configuration
 
 ### GUI App
@@ -212,10 +260,11 @@ cosmic-bing-wallpaper/
     ├── justfile                       # Build automation
     ├── install.sh                     # Installation script
     ├── src/
-    │   ├── main.rs                    # Entry point (GUI/CLI modes)
+    │   ├── main.rs                    # Entry point (GUI/CLI/Tray modes)
     │   ├── app.rs                     # COSMIC app (UI + state)
     │   ├── bing.rs                    # Bing API client
-    │   └── config.rs                  # Configuration & markets
+    │   ├── config.rs                  # Configuration & markets
+    │   └── tray.rs                    # System tray implementation
     ├── resources/
     │   ├── *.desktop                  # Desktop entry file
     │   ├── *.svg                      # Application icon
