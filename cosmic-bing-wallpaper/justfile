@@ -1,5 +1,6 @@
 name := 'cosmic-bing-wallpaper'
 appid := 'io.github.cosmic-bing-wallpaper'
+destdir := ''
 
 # Default recipe: build release
 default: build-release
