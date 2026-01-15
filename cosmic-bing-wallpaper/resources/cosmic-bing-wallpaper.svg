@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- COSMIC-style dark gradient background -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3d4f7c;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#252a3d;stop-opacity:1" />
+    </linearGradient>
+    <!-- Sky gradient (muted) -->
+    <linearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5c6b8a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7a8fb5;stop-opacity:1" />
+    </linearGradient>
+    <!-- Mountain gradient (COSMIC teal/green) -->
+    <linearGradient id="mountainGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#48a999;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2d6a5f;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer rounded square (COSMIC style) -->
+  <rect x="8" y="8" width="240" height="240" rx="48" ry="48" fill="url(#bgGradient)"/>
+
+  <!-- Inner frame (wallpaper preview area) -->
+  <rect x="32" y="32" width="192" height="144" rx="12" ry="12" fill="url(#skyGradient)"/>
+
+  <!-- Sun (COSMIC orange accent) -->
+  <circle cx="175" cy="65" r="22" fill="#f4a261"/>
+  <circle cx="175" cy="65" r="16" fill="#f4c076"/>
+
+  <!-- Far mountains -->
+  <path d="M 32 140 L 70 100 L 100 120 L 140 85 L 180 110 L 224 75 L 224 176 L 32 176 Z" fill="#6ab7a8" opacity="0.6"/>
+
+  <!-- Near mountains -->
+  <path d="M 32 155 L 80 110 L 115 135 L 160 95 L 195 125 L 224 100 L 224 176 L 32 176 Z" fill="url(#mountainGradient)"/>
+
+  <!-- Bing "b" mark (subtle, integrated) -->
+  <g transform="translate(45, 55)" opacity="0.9">
+    <rect x="0" y="0" width="10" height="55" rx="3" fill="#ffffff"/>
+    <ellipse cx="22" cy="40" rx="16" ry="15" fill="#ffffff"/>
+    <rect x="0" y="25" width="12" height="30" fill="#ffffff"/>
+  </g>
+
+  <!-- Bottom bar with refresh indicator (COSMIC style) -->
+  <rect x="32" y="188" width="192" height="44" rx="12" ry="12" fill="#2d3548"/>
+
+  <!-- Refresh icon -->
+  <g transform="translate(56, 198)">
+    <circle cx="12" cy="12" r="10" fill="none" stroke="#48a999" stroke-width="2.5"/>
+    <path d="M 12 4 L 15 8 L 9 8 Z" fill="#48a999"/>
+  </g>
+
+  <!-- "Daily" text representation (abstract lines) -->
+  <rect x="88" y="203" width="50" height="4" rx="2" fill="#6b7894"/>
+  <rect x="88" y="213" width="80" height="4" rx="2" fill="#4a5568"/>
+
+  <!-- Status dot (COSMIC accent) -->
+  <circle cx="196" cy="210" r="8" fill="#48a999"/>
+</svg>

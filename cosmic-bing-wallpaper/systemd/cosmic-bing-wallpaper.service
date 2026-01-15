@@ -1,0 +1,20 @@
+[Unit]
+Description=Fetch and set Bing daily wallpaper for COSMIC desktop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The GUI app generates this file dynamically with the correct path.
+# For manual installation, update this path to match your installation:
+#   - ~/.local/bin/cosmic-bing-wallpaper --fetch-and-apply (recommended)
+#   - /usr/local/bin/cosmic-bing-wallpaper --fetch-and-apply
+#   - ~/.local/share/cosmic-bing-wallpaper/bing-wallpaper.sh
+ExecStart=%h/.local/bin/cosmic-bing-wallpaper --fetch-and-apply
+Environment=HOME=%h
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+[Install]
+WantedBy=default.target

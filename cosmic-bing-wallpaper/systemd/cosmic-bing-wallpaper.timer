@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily Bing wallpaper update timer
+
+[Timer]
+# Run daily at 8:00 AM
+OnCalendar=*-*-* 08:00:00
+# Also run 5 minutes after boot if missed
+OnBootSec=5min
+# Add some randomness to avoid hammering Bing servers
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

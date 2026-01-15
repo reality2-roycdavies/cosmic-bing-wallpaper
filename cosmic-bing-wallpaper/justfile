@@ -1,0 +1,48 @@
+name := 'cosmic-bing-wallpaper'
+appid := 'io.github.cosmic-bing-wallpaper'
+
+# Default recipe: build release
+default: build-release
+
+# Build in debug mode
+build-debug:
+    cargo build
+
+# Build in release mode
+build-release:
+    cargo build --release
+
+# Run in debug mode
+run:
+    cargo run
+
+# Run in release mode
+run-release:
+    cargo run --release
+
+# Check code with clippy
+check:
+    cargo clippy --all-features
+
+# Format code
+fmt:
+    cargo fmt
+
+# Clean build artifacts
+clean:
+    cargo clean
+
+# Install to system
+install:
+    install -Dm0755 target/release/{{name}} {{destdir}}/usr/bin/{{name}}
+    install -Dm0644 resources/{{appid}}.desktop {{destdir}}/usr/share/applications/{{appid}}.desktop
+
+# Install to local user
+install-local:
+    mkdir -p ~/.local/bin
+    cp target/release/{{name}} ~/.local/bin/
+    mkdir -p ~/.local/share/applications
+    cp resources/{{appid}}.desktop ~/.local/share/applications/
+
+# Build and run
+br: build-debug run
