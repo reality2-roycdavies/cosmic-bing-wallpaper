@@ -28,11 +28,40 @@ This application was created collaboratively by [Dr. Roy C. Davies](https://royc
 >
 > **Testing has become even more important than before.** When you don't fully understand the code, your ability to verify it works correctly becomes your primary contribution. Knowing *what* to test, *how* to test it, and recognising when something isn't quite right—these skills are now more valuable than ever.
 
+### What the Thematic Analysis Revealed
+
+A thematic analysis of our conversation transcripts (also performed by Claude, but only after I asked for it) identified key patterns:
+
+| Theme | Finding |
+|-------|---------|
+| **Human as Quality Gate** | Every significant bug was discovered through my testing, not by Claude |
+| **Iterative Debugging** | Problems like image centering took 8+ attempts; autostart took 5 iterations |
+| **Platform Knowledge Gaps** | Claude had general knowledge but missed COSMIC-specific details |
+| **The Cost of Abstraction** | The "last 20%" (packaging, icons, autostart) consumed disproportionate effort |
+| **Organic Scope Evolution** | The project grew from shell script → GUI → tray → systemd through dialogue |
+
+The emerging model of AI-assisted development:
+
+| Role | AI | Human |
+|------|:---:|:-----:|
+| Write code | ✓ | |
+| Fix compilation errors | ✓ | |
+| Propose solutions | ✓ | |
+| Test in real environment | | ✓ |
+| Recognise incorrect behaviour | | ✓ |
+| Make final decisions | | ✓ |
+| Know when to stop | | ✓ |
+
+The human becomes an **editor, tester, and director**—roles that require understanding *what* software should do, even without knowing *how* to implement it.
+
+*See [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) for the complete analysis.*
+
 ### Educational Resources
 
 | Resource | Description |
 |----------|-------------|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Technical journey from concept to release |
+| [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | Analysis of patterns in AI-human collaboration |
 | [transcripts/](transcripts/) | Complete conversation logs (raw JSONL + readable Markdown) |
 
 ---
