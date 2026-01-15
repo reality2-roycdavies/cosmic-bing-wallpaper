@@ -6,6 +6,8 @@ A daily Bing wallpaper manager for the [COSMIC desktop environment](https://syst
 ![Rust](https://img.shields.io/badge/rust-2021-orange.svg)
 ![COSMIC](https://img.shields.io/badge/desktop-COSMIC-purple.svg)
 
+> **Just want the app?** Skip to [Quick Start](#quick-start) for installation instructions.
+
 ---
 
 ## About This Project
