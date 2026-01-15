@@ -13,6 +13,7 @@
 use ksni::{Tray, TrayService};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
 
 /// Check if the daily timer is enabled
@@ -37,11 +38,13 @@ fn toggle_timer(enable: bool) {
 pub struct BingWallpaperTray {
     /// Flag to signal when the tray should exit
     should_quit: Arc<AtomicBool>,
+    /// Channel to signal menu updates needed
+    update_tx: Sender<()>,
 }
 
 impl BingWallpaperTray {
-    pub fn new(should_quit: Arc<AtomicBool>) -> Self {
-        Self { should_quit }
+    pub fn new(should_quit: Arc<AtomicBool>, update_tx: Sender<()>) -> Self {
+        Self { should_quit, update_tx }
     }
 }
 
@@ -89,8 +92,10 @@ impl Tray for BingWallpaperTray {
             StandardItem {
                 label: timer_label.to_string(),
                 icon_name: if timer_enabled { "appointment-recurring" } else { "appointment-missed" }.to_string(),
-                activate: Box::new(move |_| {
+                activate: Box::new(move |tray: &mut Self| {
                     toggle_timer(!timer_enabled);
+                    // Signal that menu needs refresh
+                    let _ = tray.update_tx.send(());
                 }),
                 ..Default::default()
             }
@@ -142,7 +147,8 @@ impl Tray for BingWallpaperTray {
 /// Returns when the user selects "Quit" from the tray menu.
 pub fn run_tray() -> Result<(), String> {
     let should_quit = Arc::new(AtomicBool::new(false));
-    let tray = BingWallpaperTray::new(should_quit.clone());
+    let (update_tx, update_rx) = channel();
+    let tray = BingWallpaperTray::new(should_quit.clone(), update_tx);
 
     let service = TrayService::new(tray);
     let handle = service.handle();
@@ -150,9 +156,19 @@ pub fn run_tray() -> Result<(), String> {
     // Spawn the tray service
     service.spawn();
 
-    // Wait for quit signal
-    while !should_quit.load(Ordering::SeqCst) {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    // Main loop: check for quit signal and handle update requests
+    loop {
+        if should_quit.load(Ordering::SeqCst) {
+            break;
+        }
+
+        // Check for update requests (non-blocking)
+        if update_rx.try_recv().is_ok() {
+            // Trigger a tray refresh by calling update with no-op
+            handle.update(|_| {});
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
 
     // Shutdown the tray
