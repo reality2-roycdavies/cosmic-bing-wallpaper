@@ -2,7 +2,7 @@
 Name=Bing Wallpaper
 Comment=Bing Daily Wallpaper for COSMIC
 Exec=cosmic-bing-wallpaper
-Icon=preferences-desktop-wallpaper
+Icon=cosmic-bing-wallpaper
 Terminal=false
 Type=Application
 Categories=Settings;DesktopSettings;
