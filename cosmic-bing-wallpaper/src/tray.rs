@@ -219,35 +219,65 @@ impl Tray for BingWallpaperTray {
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        // Choose icons based on system theme: light icons for dark mode, dark icons for light mode
-        let icon_data: &[u8] = match (self.timer_enabled, self.dark_mode) {
-            (true, true) => include_bytes!("../resources/icon-on-light.png"),
-            (true, false) => include_bytes!("../resources/icon-on.png"),
-            (false, true) => include_bytes!("../resources/icon-off-light.png"),
-            (false, false) => include_bytes!("../resources/icon-off.png"),
+        // Provide multiple icon sizes - tray host picks the best one
+        // Small sizes have larger/bolder indicators for visibility
+        let icon_variants: &[&[u8]] = match (self.timer_enabled, self.dark_mode) {
+            (true, true) => &[
+                include_bytes!("../resources/icon-on-light.png"),      // 64px
+                include_bytes!("../resources/icon-on-light-32.png"),
+                include_bytes!("../resources/icon-on-light-24.png"),
+                include_bytes!("../resources/icon-on-light-22.png"),
+                include_bytes!("../resources/icon-on-light-16.png"),
+            ],
+            (true, false) => &[
+                include_bytes!("../resources/icon-on.png"),            // 64px
+                include_bytes!("../resources/icon-on-32.png"),
+                include_bytes!("../resources/icon-on-24.png"),
+                include_bytes!("../resources/icon-on-22.png"),
+                include_bytes!("../resources/icon-on-16.png"),
+            ],
+            (false, true) => &[
+                include_bytes!("../resources/icon-off-light.png"),     // 64px
+                include_bytes!("../resources/icon-off-light-32.png"),
+                include_bytes!("../resources/icon-off-light-24.png"),
+                include_bytes!("../resources/icon-off-light-22.png"),
+                include_bytes!("../resources/icon-off-light-16.png"),
+            ],
+            (false, false) => &[
+                include_bytes!("../resources/icon-off.png"),           // 64px
+                include_bytes!("../resources/icon-off-32.png"),
+                include_bytes!("../resources/icon-off-24.png"),
+                include_bytes!("../resources/icon-off-22.png"),
+                include_bytes!("../resources/icon-off-16.png"),
+            ],
         };
 
-        let img = match image::load_from_memory(icon_data) {
-            Ok(img) => img.to_rgba8(),
-            Err(_) => return vec![],
-        };
+        let mut icons = Vec::new();
 
-        // Convert RGBA to ARGB (network byte order) which KSNI/DBus expects
-        // No color inversion - icons should be designed for visibility
-        let mut argb_data = Vec::with_capacity((img.width() * img.height() * 4) as usize);
-        for pixel in img.pixels() {
-            let [r, g, b, a] = pixel.0;
-            argb_data.push(a);
-            argb_data.push(r);
-            argb_data.push(g);
-            argb_data.push(b);
+        for icon_data in icon_variants {
+            let img = match image::load_from_memory(icon_data) {
+                Ok(img) => img.to_rgba8(),
+                Err(_) => continue,
+            };
+
+            // Convert RGBA to ARGB (network byte order) which KSNI/DBus expects
+            let mut argb_data = Vec::with_capacity((img.width() * img.height() * 4) as usize);
+            for pixel in img.pixels() {
+                let [r, g, b, a] = pixel.0;
+                argb_data.push(a);
+                argb_data.push(r);
+                argb_data.push(g);
+                argb_data.push(b);
+            }
+
+            icons.push(ksni::Icon {
+                width: img.width() as i32,
+                height: img.height() as i32,
+                data: argb_data,
+            });
         }
 
-        vec![ksni::Icon {
-            width: img.width() as i32,
-            height: img.height() as i32,
-            data: argb_data,
-        }]
+        icons
     }
 
     fn title(&self) -> String {
@@ -438,6 +468,10 @@ pub fn run_tray() -> Result<(), String> {
         None
     };
 
+    // Track timer state for external change detection
+    let mut last_timer_enabled = is_timer_enabled();
+    let mut timer_check_counter = 0u32;
+
     // Main loop: check for quit signal and handle update requests
     loop {
         if should_quit.load(Ordering::SeqCst) {
@@ -458,6 +492,7 @@ pub fn run_tray() -> Result<(), String> {
                 // Always sync dark mode state
                 tray.dark_mode = is_dark_mode();
             });
+            last_timer_enabled = is_timer_enabled();
         }
 
         // Check for theme file changes (non-blocking)
@@ -466,6 +501,21 @@ pub fn run_tray() -> Result<(), String> {
             handle.update(|tray| {
                 tray.dark_mode = is_dark_mode();
             });
+        }
+
+        // Check for external timer state changes every ~1 second (20 iterations * 50ms)
+        // This catches changes made by the GUI app or other tools
+        timer_check_counter += 1;
+        if timer_check_counter >= 20 {
+            timer_check_counter = 0;
+            let current_timer_enabled = is_timer_enabled();
+            if current_timer_enabled != last_timer_enabled {
+                last_timer_enabled = current_timer_enabled;
+                // Timer state changed externally - update the icon
+                handle.update(|tray| {
+                    tray.timer_enabled = current_timer_enabled;
+                });
+            }
         }
 
         std::thread::sleep(std::time::Duration::from_millis(50));
