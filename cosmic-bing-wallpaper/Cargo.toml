@@ -1,6 +1,6 @@
 [package]
 name = "cosmic-bing-wallpaper"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Your Name"]
 license = "MPL-2.0"

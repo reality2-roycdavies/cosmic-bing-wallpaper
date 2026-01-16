@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-01-17
+
+### Changed
+
+- **Tray Icon Indicators**: Switched to colored indicators for better visibility
+  - Green tick for timer enabled (auto-update ON)
+  - Red cross for timer disabled (auto-update OFF)
+  - White background circle behind indicator for contrast at all sizes
+  - Original mountain/landscape icon design preserved
+  - High-quality 24px icons scaled from 64px using LANCZOS resampling
+
+---
+
 ## [0.1.4] - 2026-01-16
 
 ### Added
