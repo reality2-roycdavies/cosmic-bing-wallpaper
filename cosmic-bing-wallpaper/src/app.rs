@@ -267,6 +267,15 @@ impl Application for BingWallpaper {
         }
     }
 
+    /// Background subscription that periodically checks timer status.
+    ///
+    /// This allows the app to reflect changes made externally (e.g., from the
+    /// system tray or command line) without requiring manual refresh.
+    fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
+        cosmic::iced::time::every(std::time::Duration::from_secs(5))
+            .map(|_| Message::CheckTimerStatus)
+    }
+
     /// Handles incoming messages and returns tasks to execute.
     ///
     /// This is the "Update" in MVU architecture. Each message type has a
