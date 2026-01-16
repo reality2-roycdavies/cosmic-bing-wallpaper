@@ -42,11 +42,17 @@ pub struct BingWallpaperTray {
     should_quit: Arc<AtomicBool>,
     /// Channel to signal menu updates needed
     update_tx: Sender<()>,
+    /// Cached timer enabled state (refreshed on menu rebuild)
+    timer_enabled: bool,
 }
 
 impl BingWallpaperTray {
     pub fn new(should_quit: Arc<AtomicBool>, update_tx: Sender<()>) -> Self {
-        Self { should_quit, update_tx }
+        Self {
+            should_quit,
+            update_tx,
+            timer_enabled: is_timer_enabled(),
+        }
     }
 }
 
@@ -67,8 +73,7 @@ impl Tray for BingWallpaperTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
 
-        let timer_enabled = is_timer_enabled();
-        let timer_label = if timer_enabled {
+        let timer_label = if self.timer_enabled {
             "Daily Update: On ✓"
         } else {
             "Daily Update: Off"
@@ -113,9 +118,12 @@ impl Tray for BingWallpaperTray {
             MenuItem::Separator,
             StandardItem {
                 label: timer_label.to_string(),
-                icon_name: if timer_enabled { "appointment-recurring" } else { "appointment-missed" }.to_string(),
-                activate: Box::new(move |tray: &mut Self| {
-                    toggle_timer(!timer_enabled);
+                icon_name: if self.timer_enabled { "appointment-recurring" } else { "appointment-missed" }.to_string(),
+                activate: Box::new(|tray: &mut Self| {
+                    // Toggle the timer
+                    let new_state = !tray.timer_enabled;
+                    toggle_timer(new_state);
+                    tray.timer_enabled = new_state;
                     // Signal that menu needs refresh
                     let _ = tray.update_tx.send(());
                 }),
@@ -185,8 +193,12 @@ pub fn run_tray() -> Result<(), String> {
 
         // Check for update requests (non-blocking)
         if update_rx.try_recv().is_ok() {
-            // Trigger a tray refresh by calling update with no-op
-            handle.update(|_| {});
+            // Trigger a tray refresh - the state is already updated in the tray struct
+            // This tells ksni to re-read the menu
+            handle.update(|tray| {
+                // Re-sync with actual systemd state in case of external changes
+                tray.timer_enabled = is_timer_enabled();
+            });
         }
 
         std::thread::sleep(std::time::Duration::from_millis(50));
