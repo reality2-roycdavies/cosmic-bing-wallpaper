@@ -457,6 +457,30 @@ This section documents the iterative debugging process, which is valuable for un
 
 ---
 
+## Important Caveat
+
+This project, like its companion [cosmic-runkat](https://github.com/reality2-roycdavies/cosmic-runkat), is a **small, self-contained desktop application**. The rapid AI-assisted development approach demonstrated here reflects this limited scope:
+
+- Single-purpose functionality (fetch wallpaper, apply it)
+- Simple external API (Bing's public image endpoint)
+- No authentication or user accounts
+- No database or complex state management
+- Local-only operation with minimal security considerations
+
+**The findings should not be extrapolated to larger, more complex projects.** Applications involving distributed systems, security-sensitive operations, complex business logic, multi-team coordination, or enterprise requirements would present fundamentally different challenges.
+
+For complex projects, expect:
+- More extensive architecture and design phases
+- Greater need for human domain expertise
+- Security reviews requiring human judgment
+- Integration challenges with existing systems
+- Performance optimization through profiling
+- Team coordination and formal code review
+
+This documentation shows what AI-assisted development looks like for small desktop utilities, not a universal template for all software development.
+
+---
+
 ## Contributing
 
 When adding new features or fixing bugs, please update this document with any learnings that might help future developers.
