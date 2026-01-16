@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.cosmic-bing-wallpaper</id>
+  <name>Bing Wallpaper</name>
+  <summary>Bing Daily Wallpaper for COSMIC Desktop</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <developer id="io.github.reality2-roycdavies">
+    <name>Roy C. Davies</name>
+  </developer>
+
+  <description>
+    <p>
+      NOTE: This application requires the COSMIC desktop environment and will
+      not function on other desktop environments.
+    </p>
+    <p>
+      A native COSMIC desktop application that fetches Microsoft Bing's beautiful
+      daily wallpaper images and sets them as your desktop background.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Preview today's Bing image before applying</li>
+      <li>Browse and apply previously downloaded wallpapers</li>
+      <li>Choose from 20+ regional Bing markets</li>
+      <li>System tray integration with quick controls</li>
+      <li>Automatic daily updates via systemd timer</li>
+      <li>Dark/light theme adaptation</li>
+      <li>Lightweight and native - built with libcosmic</li>
+    </ul>
+    <p>
+      This project was created collaboratively with Claude (Anthropic's AI assistant)
+      using Claude Code, demonstrating AI-assisted software development.
+    </p>
+  </description>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <url type="homepage">https://github.com/reality2-roycdavies/cosmic-bing-wallpaper</url>
+  <url type="bugtracker">https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/issues</url>
+  <url type="vcs-browser">https://github.com/reality2-roycdavies/cosmic-bing-wallpaper</url>
+
+  <launchable type="desktop-id">io.github.cosmic-bing-wallpaper.desktop</launchable>
+
+  <provides>
+    <binary>cosmic-bing-wallpaper</binary>
+  </provides>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#0078D7</color>
+    <color type="primary" scheme_preference="dark">#0078D7</color>
+  </branding>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.2.0" date="2026-01-17">
+      <description>
+        <p>Flatpak packaging and distribution release:</p>
+        <ul>
+          <li>Added Flatpak manifest for Flathub distribution</li>
+          <li>Marked as COSMIC-only application</li>
+          <li>Added proper AppStream metainfo</li>
+          <li>Improved desktop entry with COSMIC restriction</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.1.5" date="2026-01-16">
+      <description>
+        <p>Daemon architecture and tray improvements:</p>
+        <ul>
+          <li>D-Bus daemon for centralized state management</li>
+          <li>System tray with instant theme adaptation</li>
+          <li>Embedded pixmap icons for reliable display</li>
+          <li>File watching for instant theme changes</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-01-15">
+      <description>
+        <p>Initial release with core features:</p>
+        <ul>
+          <li>Fetch and preview daily Bing images</li>
+          <li>Wallpaper history browser</li>
+          <li>Regional market selection</li>
+          <li>Systemd timer integration</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <categories>
+    <category>Settings</category>
+    <category>DesktopSettings</category>
+  </categories>
+
+  <keywords>
+    <keyword>wallpaper</keyword>
+    <keyword>bing</keyword>
+    <keyword>background</keyword>
+    <keyword>desktop</keyword>
+    <keyword>cosmic</keyword>
+    <keyword>daily</keyword>
+  </keywords>
+</component>
