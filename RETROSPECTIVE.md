@@ -301,4 +301,86 @@ The project demonstrates both the power and the limitations of AI-assisted devel
 
 ---
 
-*This retrospective was written by Claude as part of the same experimental process it analyzes.*
+## Addendum: Part 4 Retrospective
+
+A fourth session addressed component synchronization and visual polish. New insights emerged:
+
+### What Worked Well in Part 4
+
+#### 1. Recognizing Architectural Pain Points
+
+**What happened:** The user reported "when auto update is toggled in the app, the icon in the tray does not change."
+
+**Why it worked:** Rather than just patching the symptom (polling), we recognized this as an architectural problem and refactored to a daemon+clients model. The pain point revealed the need for proper state management.
+
+#### 2. Consulting Multiple AI Tools
+
+**What happened:** When Claude's approaches to dynamic icon updates kept failing, Gemini suggested using `icon_pixmap()` to embed icons directly.
+
+**Why it worked:** Different AI systems have different knowledge. Consulting Gemini when stuck provided a fresh perspective that solved the problem immediately.
+
+**Lesson:** Don't be afraid to consult multiple AI tools. They have complementary strengths.
+
+#### 3. User-Driven Iteration on Visual Design
+
+**What happened:** The user provided specific feedback: "looks better in terms of size, but I preferred the icon from before with the rectangle and mountains."
+
+**Why it worked:** The user knew what they wanted visually, even if they couldn't implement it. Specific feedback (keep original design + add colored indicators) led to the final solution.
+
+### What Didn't Work Well in Part 4
+
+#### 1. Too Many Icon Update Approaches
+
+**What happened:** 5+ different approaches were tried before finding the working solution.
+
+| Attempt | Approach | Result |
+|---------|----------|--------|
+| 1 | `icon_name()` with custom icons | Failed on dynamic updates |
+| 2 | Standard system icons | Worked but couldn't customize |
+| 3 | Changing tray ID | Caused duplicate icons |
+| 4 | Restarting tray via systemd | Worked but caused flicker |
+| 5 | Various path manipulations | Failed |
+| 6 | `icon_pixmap()` (from Gemini) | Success! |
+
+**Why it failed:** Claude didn't have deep knowledge of COSMIC's StatusNotifierWatcher implementation. Each approach was reasonable but based on incomplete understanding.
+
+**What could have been better:** Earlier research into how COSMIC handles tray icons, or earlier consultation with other sources.
+
+#### 2. Multiple Icon Sizes Didn't Work as Expected
+
+**What happened:** Created 6 icon sizes (16-64px) expecting COSMIC to select the appropriate size. It didn't—it just scaled one icon.
+
+**Why it failed:** Assumption about how SNI hosts handle multiple icon sizes was wrong.
+
+**What could have been better:** Testing with a single size first, then adding complexity only if needed.
+
+### New Lessons from Part 4
+
+1. **Architecture emerges from pain** — The "right" design often becomes clear only after experiencing problems with the "wrong" one.
+
+2. **Consult multiple AIs** — When stuck, try another AI tool. They have complementary knowledge.
+
+3. **Color contrast aids accessibility** — At small sizes, color (green/red) communicates state better than shape (tick/cross).
+
+4. **Watch directories, not files** — Atomic file replacement (write temp, rename) doesn't trigger events on the original path.
+
+5. **RGBA ≠ ARGB** — D-Bus StatusNotifierItem expects ARGB byte order. Getting this wrong produces corrupted icons.
+
+6. **User visual preferences matter** — The user's preference for the original icon design + colored indicators led to the best solution.
+
+### Updated Summary
+
+| Aspect | Assessment |
+|--------|------------|
+| **Speed** | Excellent — ~8 hours total across 4 sessions |
+| **Code quality (initial)** | Good but not great — worked but had edge cases |
+| **Code quality (after review)** | Much better — 13+ issues addressed |
+| **Architecture (initial)** | Monolithic — worked but had sync issues |
+| **Architecture (final)** | Daemon+clients — clean separation, instant sync |
+| **Documentation** | Comprehensive — 4 transcripts, thematic analysis |
+| **Platform fit** | Required iteration — COSMIC specifics learned the hard way |
+| **Visual polish** | Required iteration — 6 attempts for icon updates |
+
+---
+
+*This retrospective was written by Claude as part of the same experimental process it analyzes. Updated after Part 4 session.*

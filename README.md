@@ -104,7 +104,7 @@ After completion, we analysed what worked and what could have been better:
 
 ### What the Thematic Analysis Revealed
 
-A thematic analysis of our conversation transcripts (also performed by Claude, but only after I asked for it) identified key patterns:
+A thematic analysis of our conversation transcripts (also performed by Claude, but only after I asked for it) identified key patterns across 4 development sessions:
 
 | Theme | Finding |
 |-------|---------|
@@ -113,6 +113,8 @@ A thematic analysis of our conversation transcripts (also performed by Claude, b
 | **Platform Knowledge Gaps** | Claude had general knowledge but missed COSMIC-specific details |
 | **The Cost of Abstraction** | The "last 20%" (packaging, icons, autostart) consumed disproportionate effort |
 | **Organic Scope Evolution** | The project grew from shell script → GUI → tray → systemd through dialogue |
+| **External Knowledge Integration** | Solutions sometimes came from other AI tools (e.g., Gemini suggested pixmap approach) |
+| **Architecture Emerges from Pain** | The daemon+clients model emerged only after synchronization problems became clear |
 
 The emerging model of AI-assisted development:
 
@@ -135,12 +137,13 @@ The human becomes an **editor, tester, and director**—roles that require under
 | Resource | Description |
 |----------|-------------|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Technical journey from concept to release |
-| [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | 13 themes identified in AI-human collaboration patterns |
+| [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | 16 themes identified in AI-human collaboration patterns |
 | [RETROSPECTIVE.md](RETROSPECTIVE.md) | What worked, what didn't, and lessons for future projects |
 | **Conversation Transcripts** | |
 | [Part 1: Creation](transcripts/CONVERSATION-PART1-CREATION.md) | Initial development from shell script to GUI application |
 | [Part 2: Refinement](transcripts/CONVERSATION-PART2-REFINEMENT.md) | Bug fixes, system tray, systemd integration, packaging |
 | [Part 3: Code Review](transcripts/CONVERSATION-PART3-CODE-REVIEW.md) | Edge case analysis and 13 fixes |
+| [Part 4: Architecture & Polish](transcripts/CONVERSATION-PART4-ARCHITECTURE.md) | D-Bus daemon refactoring, theme-aware icons, colored indicators |
 | [Raw transcripts](transcripts/) | JSONL files for programmatic analysis |
 
 ---
@@ -165,7 +168,9 @@ This project includes both a simple shell script for quick use and a full native
 - **Fetch Wallpaper**: Download today's image without opening the full app
 - **Open App**: Launch the full GUI when needed
 - **Theme-Aware Icons**: Automatically adapts to dark/light mode (v0.1.4+)
-- **Toggle Timer**: Enable/disable daily updates with visual feedback
+- **Colored Status Indicators**: Green tick (enabled) / red cross (disabled) for visibility (v0.1.5+)
+- **Toggle Timer**: Enable/disable daily updates with instant visual feedback
+- **Instant Sync**: Changes in GUI immediately reflected in tray via D-Bus
 
 ### Shell Script
 - Lightweight alternative for automation
@@ -496,7 +501,7 @@ The AppImage will be created in `appimage/build/`.
 
 ### Architecture
 
-The application uses a **daemon+clients** architecture for instant synchronization:
+The application uses a **daemon+clients** architecture (v0.1.4+) for instant synchronization between components:
 
 ```
                     D-Bus (org.cosmicbing.Wallpaper1)
@@ -507,9 +512,35 @@ The application uses a **daemon+clients** architecture for instant synchronizati
    (app.rs)           (daemon.rs)            (tray.rs)
 ```
 
-- **Daemon**: Background service managing wallpaper operations, timer control, and configuration
-- **GUI Client**: Full application window using libcosmic, communicates via D-Bus
-- **Tray Client**: System tray icon with menu, theme-aware icons that adapt to dark/light mode
+#### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Daemon** | `daemon.rs` | Background D-Bus service managing wallpaper operations, timer control, and configuration. Auto-activates via D-Bus when needed. |
+| **GUI Client** | `app.rs` | Full application window using libcosmic. Communicates with daemon via D-Bus for all operations. |
+| **Tray Client** | `tray.rs` | System tray icon with menu. Theme-aware icons adapt to dark/light mode instantly via inotify file watching. |
+| **D-Bus Client** | `dbus_client.rs` | Shared proxy for both GUI and tray to communicate with daemon. |
+
+#### D-Bus Interface
+
+The daemon exposes `org.cosmicbing.Wallpaper1` with these methods:
+- `FetchWallpaper(apply: bool) → String` - Fetch today's wallpaper
+- `GetTimerEnabled() → bool` / `SetTimerEnabled(bool)` - Timer control
+- `GetWallpaperDir() → String` - Get configured directory
+- `GetCurrentWallpaper() → String` - Get active wallpaper path
+
+#### Why This Architecture?
+
+The original monolithic design had problems:
+- GUI and tray couldn't communicate state changes
+- Timer state was duplicated and could get out of sync
+- Polling required to detect external changes
+
+The daemon+clients model provides:
+- **Single source of truth**: Daemon owns all state
+- **Instant sync**: Changes propagate immediately between GUI and tray
+- **Clean separation**: UI code is purely UI, no business logic
+- **Extensibility**: Other apps can use the D-Bus API
 
 The GUI follows the Model-View-Update (MVU) pattern:
 - **Model** (`BingWallpaper`): Application state
@@ -519,8 +550,10 @@ The GUI follows the Model-View-Update (MVU) pattern:
 ### System Tray Features (v0.1.4+)
 
 - **Theme-aware icons**: Automatically switches between light/dark icons based on system theme
-- **Instant theme detection**: Uses inotify file watching (no polling)
-- **Embedded pixmaps**: Icons embedded in binary for reliable display across all configurations
+- **Instant theme detection**: Uses inotify file watching (no polling) on COSMIC's theme config
+- **Embedded pixmaps**: Icons embedded in binary via `include_bytes!()` for reliable display
+- **Colored indicators** (v0.1.5): Green tick (timer ON) / red cross (timer OFF) for visibility at all sizes
+- **External state sync**: Detects timer changes made by GUI and updates icon accordingly
 
 ### Build Commands
 ```bash

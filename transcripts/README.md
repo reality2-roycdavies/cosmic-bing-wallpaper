@@ -31,6 +31,17 @@ and potential issues, followed by fixes for all of them. Topics include:
 HTTP timeouts, image validation, wallpaper cleanup, delete confirmation,
 tilde expansion, tray notifications, and more.
 
+### Part 4: Architecture & Visual Polish
+- **`CONVERSATION-PART4-ARCHITECTURE.md`** - Readable Markdown version
+
+This session covers major architectural refactoring and visual improvements:
+- **D-Bus Daemon Architecture**: Refactored from monolithic to daemon+clients model
+  for instant synchronization between GUI and tray
+- **Theme-Aware Tray Icons**: Icons adapt to dark/light mode via inotify file watching
+- **Embedded Pixmap Icons**: Bypassed COSMIC's icon theme lookup issues
+- **Colored Status Indicators**: Green tick (ON) / red cross (OFF) for visibility at small sizes
+- **External AI Collaboration**: Gemini suggested the pixmap approach when Claude was stuck
+
 ## Format Notes
 
 ### JSONL Files

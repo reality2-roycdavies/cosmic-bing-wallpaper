@@ -186,6 +186,146 @@ fn is_timer_enabled() -> bool {
 
 The tray now shows "Daily Update: On/Off" and clicking toggles the systemd timer.
 
+### Phase 6: D-Bus Daemon Architecture (v0.1.4)
+
+**Problem:** The tray and GUI couldn't communicate state changes. When you toggled the timer in the GUI, the tray icon didn't update. Each component managed its own state, leading to synchronization issues.
+
+**Solution:** Refactored to a daemon+clients architecture:
+
+```
+                    D-Bus (org.cosmicbing.Wallpaper1)
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+   GUI Client            Daemon              Tray Client
+   (app.rs)           (daemon.rs)            (tray.rs)
+```
+
+**New files created:**
+- `daemon.rs` - D-Bus service with `org.cosmicbing.Wallpaper1` interface
+- `dbus_client.rs` - Client proxy for GUI and tray to call daemon
+
+**D-Bus interface using zbus:**
+
+```rust
+#[interface(name = "org.cosmicbing.Wallpaper1")]
+impl WallpaperDaemon {
+    async fn fetch_wallpaper(&self, apply: bool) -> zbus::fdo::Result<String>;
+    async fn get_timer_enabled(&self) -> bool;
+    async fn set_timer_enabled(&mut self, enabled: bool) -> zbus::fdo::Result<()>;
+    #[zbus(property)]
+    fn wallpaper_dir(&self) -> String;
+}
+```
+
+**Challenge:** Calling async D-Bus methods from synchronous tray callbacks.
+
+**Wrong approach:**
+```rust
+// Panics if called from within an async context!
+tokio::runtime::Runtime::new().unwrap().block_on(async { ... })
+```
+
+**Correct approach:**
+```rust
+let rt = tokio::runtime::Builder::new_current_thread()
+    .enable_all()
+    .build();
+if let Ok(rt) = rt {
+    rt.block_on(async {
+        let client = WallpaperClient::connect().await?;
+        client.some_method().await
+    })
+}
+```
+
+### Phase 7: Theme-Aware Tray Icons (v0.1.4)
+
+**Problem:** COSMIC's StatusNotifierWatcher doesn't reliably find custom icons installed in user directories during dynamic updates, even though it finds them at startup.
+
+**What we tried:**
+1. Using `icon_name()` with custom icons - found at startup but not during updates
+2. Using standard system icons (`appointment-soon-symbolic`) - worked for dynamic updates
+3. Restarting tray via systemd - worked but caused flicker
+
+**Breakthrough:** Suggested by Gemini - use `icon_pixmap()` to embed icons directly:
+
+```rust
+fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+    let icon_data: &[u8] = match (self.timer_enabled, self.dark_mode) {
+        (true, true) => include_bytes!("../resources/icon-on-light-24.png"),
+        (true, false) => include_bytes!("../resources/icon-on-24.png"),
+        (false, true) => include_bytes!("../resources/icon-off-light-24.png"),
+        (false, false) => include_bytes!("../resources/icon-off-24.png"),
+    };
+
+    let img = image::load_from_memory(icon_data)?.to_rgba8();
+
+    // CRITICAL: Convert RGBA to ARGB - SNI expects ARGB, not RGBA!
+    let mut argb_data = Vec::new();
+    for pixel in img.pixels() {
+        let [r, g, b, a] = pixel.0;
+        argb_data.extend_from_slice(&[a, r, g, b]);  // ARGB order
+    }
+
+    vec![ksni::Icon { width, height, data: argb_data }]
+}
+```
+
+**Theme detection:** Read COSMIC's config file directly:
+
+```rust
+fn is_dark_mode() -> bool {
+    let path = dirs::config_dir()?.join("cosmic/com.system76.CosmicTheme.Mode/v1/is_dark");
+    fs::read_to_string(&path).map(|s| s.trim() == "true").unwrap_or(true)
+}
+```
+
+**Instant theme updates:** Using `notify` crate for inotify file watching instead of polling:
+
+```rust
+let mut watcher = RecommendedWatcher::new(move |event| {
+    if matches!(event.kind, Modify(_) | Create(_)) {
+        tx.send(()).ok();
+    }
+}, config)?;
+watcher.watch(&theme_config_dir, RecursiveMode::NonRecursive)?;
+```
+
+**Important:** Watch the *directory*, not the file. COSMIC may atomically replace the file (write to temp, rename), which wouldn't trigger a modify event on the original file path.
+
+### Phase 8: Colored Status Indicators (v0.1.5)
+
+**Problem:** At small panel sizes (levels 1-3), the tick/cross indicators were too small to see clearly.
+
+**Initial attempt:** Created multiple icon sizes (16px through 64px) with bolder indicators for smaller sizes. COSMIC appears to just scale one icon rather than selecting the appropriate size.
+
+**Final solution:** Single 24px icon with colored indicators:
+- **Green tick** for timer enabled (ON state)
+- **Red cross** for timer disabled (OFF state)
+- **White background circle** behind indicator for contrast at all sizes
+
+```python
+# Creating icons with PIL
+if is_on:
+    draw.line([...], fill=(0, 180, 0, 255), width=2)  # Green tick
+else:
+    draw.line([...], fill=(200, 0, 0, 255), width=2)  # Red cross
+```
+
+**External state sync:** The tray now polls timer state every ~1 second to catch changes made by the GUI or other tools:
+
+```rust
+timer_check_counter += 1;
+if timer_check_counter >= 20 {  // 20 × 50ms = 1 second
+    timer_check_counter = 0;
+    let current = is_timer_enabled();
+    if current != last_timer_enabled {
+        handle.update(|tray| tray.timer_enabled = current);
+    }
+}
+```
+
 ## Testing Performed
 
 ### Manual Testing
@@ -288,28 +428,51 @@ The `symbolic` suffix tells COSMIC to use theme-appropriate coloring.
 
 4. **Symbolic icons matter** - System trays need `-symbolic` variants for proper theme integration.
 
-5. **Iterate with releases** - We went through v0.1.0 → v0.1.3 fixing real-world issues. Ship early, fix fast.
+5. **Iterate with releases** - We went through v0.1.0 → v0.1.5 fixing real-world issues. Ship early, fix fast.
 
 6. **Document as you go** - This file exists because we tracked decisions throughout development.
+
+7. **Embedded pixmaps bypass icon lookup issues** - When icon theme lookup fails, embedding icons directly in the binary via `include_bytes!()` and `icon_pixmap()` is the robust solution.
+
+8. **Watch directories, not files** - When watching for config changes, watch the parent directory. Atomic file replacement (write temp, rename) won't trigger events on the original file.
+
+9. **RGBA vs ARGB matters** - D-Bus StatusNotifierItem expects ARGB byte order, not RGBA. Getting this wrong produces corrupted icons.
+
+10. **State sync requires architecture** - When multiple components need to share state (GUI, tray), a daemon+clients model with D-Bus provides cleaner synchronization than polling or file-based communication.
+
+11. **Color beats shape at small sizes** - For tray icons at small panel sizes, colored indicators (green tick/red cross) are more visible than monochrome shape differences.
 
 ## Project Structure (Final)
 
 ```
 cosmic-bing-wallpaper/
 ├── README.md                 # User-facing documentation
-├── DEVELOPMENT.md            # This file
+├── DEVELOPMENT.md            # This file (high-level journey)
+├── THEMATIC-ANALYSIS.md      # Patterns in AI-human collaboration
+├── RETROSPECTIVE.md          # What worked, what didn't
 ├── install-appimage.sh       # AppImage installer script
+├── transcripts/              # Conversation transcripts
+│   ├── CONVERSATION-PART1-CREATION.md
+│   ├── CONVERSATION-PART2-REFINEMENT.md
+│   ├── CONVERSATION-PART3-CODE-REVIEW.md
+│   └── CONVERSATION-PART4-ARCHITECTURE.md
 └── cosmic-bing-wallpaper/    # Main Rust project
     ├── Cargo.toml
+    ├── CHANGELOG.md          # Version history
+    ├── DEVELOPMENT.md        # Technical learnings (detailed)
     ├── justfile              # Build/install recipes
     ├── src/
     │   ├── main.rs           # Entry point, CLI handling
     │   ├── app.rs            # GUI application (MVU pattern)
-    │   ├── wallpaper.rs      # Bing API and wallpaper logic
-    │   └── tray.rs           # System tray implementation
+    │   ├── bing.rs           # Bing API client
+    │   ├── config.rs         # Configuration management
+    │   ├── daemon.rs         # D-Bus daemon service
+    │   ├── dbus_client.rs    # D-Bus client proxy
+    │   └── tray.rs           # System tray with theme-aware icons
     ├── resources/
     │   ├── *.desktop         # Desktop entry files
-    │   └── *.svg             # Application icons
+    │   ├── *.svg             # Application icons
+    │   └── icon-*.png        # Tray icons (on/off, dark/light)
     └── appimage/
         └── build-appimage.sh # AppImage build script
 ```
@@ -317,11 +480,14 @@ cosmic-bing-wallpaper/
 ## Tools Used
 
 - **Claude Code** (Anthropic's CLI) - AI pair programming
+- **Gemini** (Google) - Suggested pixmap approach for tray icons
 - **Rust/Cargo** - Build system
 - **just** - Task runner (like make, but simpler)
 - **gh** - GitHub CLI for releases
 - **appimagetool** - AppImage creation
 - **systemctl** - Systemd service management
+- **Python/PIL** - Icon generation and manipulation
+- **D-Bus** - Inter-process communication for daemon architecture
 
 ---
 
