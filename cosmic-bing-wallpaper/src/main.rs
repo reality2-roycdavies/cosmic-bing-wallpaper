@@ -9,17 +9,22 @@
 //! - Maintains a history of downloaded wallpapers
 //! - Integrates with systemd user timers for automatic daily updates
 //! - System tray icon for background operation
+//! - D-Bus daemon for IPC between GUI and tray components
 //!
 //! ## Architecture
-//! The application follows the Model-View-Update (MVU) pattern used by iced/libcosmic:
-//! - `app.rs` - Main application state, UI views, and message handling
+//! The application uses a daemon+clients architecture with D-Bus for IPC:
+//!
+//! - `daemon.rs` - Background D-Bus service providing core wallpaper functionality
+//! - `dbus_client.rs` - Client proxy for communicating with the daemon
+//! - `app.rs` - GUI application using libcosmic (MVU pattern)
+//! - `tray.rs` - System tray icon (uses D-Bus when daemon is available)
 //! - `bing.rs` - Bing API client for fetching image metadata and downloading
 //! - `config.rs` - User configuration and regional market definitions
-//! - `tray.rs` - System tray icon and menu
 //!
 //! ## CLI Usage
 //! - No arguments: Launch the GUI application
 //! - `--tray`: Run in system tray only (background mode)
+//! - `--daemon`: Run as D-Bus daemon (background service)
 //! - `--fetch-and-apply`: Fetch today's image and apply as wallpaper (for systemd timer)
 //! - `--help`: Show help message
 //!
@@ -31,16 +36,19 @@ mod app;
 mod config;
 mod bing;
 mod tray;
+mod daemon;
+mod dbus_client;
 
 use app::BingWallpaper;
 use cosmic::iced::Size;
 
 /// Application entry point.
 ///
-/// Supports three modes:
+/// Supports four modes:
 /// 1. GUI mode (default): Launches the COSMIC application window
 /// 2. Tray mode (`--tray`): Runs in system tray for background operation
-/// 3. CLI mode (`--fetch-and-apply`): Headless fetch and apply for systemd timer
+/// 3. Daemon mode (`--daemon`): Runs as D-Bus service for IPC
+/// 4. CLI mode (`--fetch-and-apply`): Headless fetch and apply for systemd timer
 fn main() -> cosmic::iced::Result {
     let args: Vec<String> = std::env::args().collect();
 
@@ -52,6 +60,16 @@ fn main() -> cosmic::iced::Result {
                 println!("Starting Bing Wallpaper in system tray...");
                 if let Err(e) = tray::run_tray() {
                     eprintln!("Tray error: {}", e);
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
+            "--daemon" | "-d" => {
+                // Run as D-Bus daemon
+                println!("Starting Bing Wallpaper daemon...");
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+                if let Err(e) = rt.block_on(daemon::run_daemon()) {
+                    eprintln!("Daemon error: {}", e);
                     std::process::exit(1);
                 }
                 return Ok(());
@@ -91,11 +109,15 @@ fn print_help(program: &str) {
     println!("Options:");
     println!("  (none)             Launch the GUI application");
     println!("  --tray, -t         Run in system tray (background mode)");
+    println!("  --daemon, -d       Run as D-Bus daemon (background service)");
     println!("  --fetch-and-apply  Fetch today's image and apply as wallpaper");
     println!("  --help, -h         Show this help message");
     println!();
     println!("The system tray mode runs in the background and provides quick");
     println!("access to wallpaper functions via right-click menu.");
+    println!();
+    println!("The daemon mode runs a D-Bus service that manages wallpapers.");
+    println!("Both the GUI and tray can connect to the daemon for synchronized state.");
 }
 
 /// Maximum number of retry attempts for network operations

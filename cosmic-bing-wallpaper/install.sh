@@ -40,8 +40,10 @@ BIN_DIR="$PREFIX/bin"
 SHARE_DIR="$PREFIX/share"
 APPLICATIONS_DIR="$SHARE_DIR/applications"
 ICONS_DIR="$SHARE_DIR/icons/hicolor/scalable/apps"
+ICONS_SYMBOLIC_DIR="$SHARE_DIR/icons/hicolor/symbolic/apps"
 METAINFO_DIR="$SHARE_DIR/metainfo"
 DATA_DIR="$SHARE_DIR/$APP_NAME"
+DBUS_SERVICES_DIR="$SHARE_DIR/dbus-1/services"
 
 # Handle uninstall
 if [[ "${1:-}" == "--uninstall" ]] || [[ "${1:-}" == "-u" ]]; then
@@ -49,8 +51,10 @@ if [[ "${1:-}" == "--uninstall" ]] || [[ "${1:-}" == "-u" ]]; then
 
     rm -f "$BIN_DIR/$APP_NAME"
     rm -f "$APPLICATIONS_DIR/$APP_ID.desktop"
-    rm -f "$ICONS_DIR/$APP_NAME.svg"
+    rm -f "$ICONS_DIR/$APP_ID.svg"
+    rm -f "$ICONS_SYMBOLIC_DIR/$APP_ID-symbolic.svg"
     rm -f "$METAINFO_DIR/$APP_ID.metainfo.xml"
+    rm -f "$DBUS_SERVICES_DIR/org.cosmicbing.Wallpaper1.service"
     rm -rf "$DATA_DIR"
 
     # Update desktop database
@@ -68,17 +72,39 @@ echo "=== Building release binary ==="
 cd "$SCRIPT_DIR"
 cargo build --release
 
+# Stop any running instances before upgrading
+echo ""
+echo "=== Stopping running instances ==="
+# Stop systemd services if they exist
+if systemctl --user is-active --quiet cosmic-bing-wallpaper-daemon.service 2>/dev/null; then
+    echo "Stopping daemon service..."
+    systemctl --user stop cosmic-bing-wallpaper-daemon.service 2>/dev/null || true
+fi
+if systemctl --user is-active --quiet cosmic-bing-wallpaper-tray.service 2>/dev/null; then
+    echo "Stopping tray service..."
+    systemctl --user stop cosmic-bing-wallpaper-tray.service 2>/dev/null || true
+fi
+# Kill any remaining processes
+if pgrep -f "$APP_NAME" > /dev/null 2>&1; then
+    echo "Stopping running processes..."
+    pkill -f "$APP_NAME" 2>/dev/null || true
+    sleep 1
+fi
+
 # Create directories
 echo ""
 echo "=== Installing files ==="
 mkdir -p "$BIN_DIR"
 mkdir -p "$APPLICATIONS_DIR"
 mkdir -p "$ICONS_DIR"
+mkdir -p "$ICONS_SYMBOLIC_DIR"
 mkdir -p "$METAINFO_DIR"
 mkdir -p "$DATA_DIR"
+mkdir -p "$DBUS_SERVICES_DIR"
 
-# Install binary
+# Install binary (remove old first to avoid permission issues)
 echo "Installing binary..."
+rm -f "$BIN_DIR/$APP_NAME"
 cp "$SCRIPT_DIR/target/release/$APP_NAME" "$BIN_DIR/"
 chmod +x "$BIN_DIR/$APP_NAME"
 
@@ -98,9 +124,20 @@ Keywords=wallpaper;bing;background;desktop;cosmic;
 StartupNotify=true
 EOF
 
-# Install icon
-echo "Installing icon..."
-cp "$SCRIPT_DIR/resources/$APP_NAME.svg" "$ICONS_DIR/"
+# Install icons
+echo "Installing icons..."
+cp "$SCRIPT_DIR/resources/$APP_ID.svg" "$ICONS_DIR/"
+cp "$SCRIPT_DIR/resources/$APP_ID-symbolic.svg" "$ICONS_SYMBOLIC_DIR/"
+cp "$SCRIPT_DIR/resources/$APP_ID-on-symbolic.svg" "$ICONS_SYMBOLIC_DIR/"
+cp "$SCRIPT_DIR/resources/$APP_ID-off-symbolic.svg" "$ICONS_SYMBOLIC_DIR/"
+
+# Install D-Bus service file (for daemon auto-activation)
+echo "Installing D-Bus service..."
+cat > "$DBUS_SERVICES_DIR/org.cosmicbing.Wallpaper1.service" << EOF
+[D-BUS Service]
+Name=org.cosmicbing.Wallpaper1
+Exec=$BIN_DIR/$APP_NAME --daemon
+EOF
 
 # Install AppStream metadata
 echo "Installing metadata..."
@@ -123,10 +160,23 @@ if command -v gtk-update-icon-cache &> /dev/null; then
     gtk-update-icon-cache "$SHARE_DIR/icons/hicolor" 2>/dev/null || true
 fi
 
+# Restart services if they were enabled
+echo ""
+echo "=== Restarting services ==="
+if systemctl --user is-enabled --quiet cosmic-bing-wallpaper-daemon.service 2>/dev/null; then
+    echo "Restarting daemon service..."
+    systemctl --user start cosmic-bing-wallpaper-daemon.service 2>/dev/null || true
+fi
+if systemctl --user is-enabled --quiet cosmic-bing-wallpaper-tray.service 2>/dev/null; then
+    echo "Restarting tray service..."
+    systemctl --user start cosmic-bing-wallpaper-tray.service 2>/dev/null || true
+fi
+
 echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "The application is now available in your Applications menu as 'Bing Wallpaper'."
 echo "You can also run it from the terminal: $APP_NAME"
 echo ""
+echo "If you had services running, they have been restarted with the new version."
 echo "To uninstall, run: $0 --uninstall"

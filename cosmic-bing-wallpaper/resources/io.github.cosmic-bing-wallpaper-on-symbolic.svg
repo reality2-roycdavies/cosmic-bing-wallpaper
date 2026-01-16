@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Wallpaper icon with tick overlay for "timer enabled" state -->
+
+  <!-- Frame -->
+  <rect x="1" y="2" width="14" height="12" rx="1" ry="1"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+
+  <!-- Mountain/landscape -->
+  <path d="M 3 11 L 6 7 L 8 9 L 11 5 L 13 8 L 13 11 Z"
+        fill="currentColor" opacity="0.8"/>
+
+  <!-- Sun -->
+  <circle cx="11" cy="5" r="1.5" fill="currentColor"/>
+
+  <!-- Tick/checkmark badge (bottom-right) -->
+  <circle cx="13" cy="12" r="3" fill="currentColor"/>
+  <path d="M 11.5 12 L 12.5 13 L 14.5 11"
+        fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -164,6 +164,8 @@ This project includes both a simple shell script for quick use and a full native
 - **Quick Access**: Right-click menu for common actions
 - **Fetch Wallpaper**: Download today's image without opening the full app
 - **Open App**: Launch the full GUI when needed
+- **Theme-Aware Icons**: Automatically adapts to dark/light mode (v0.1.4+)
+- **Toggle Timer**: Enable/disable daily updates with visual feedback
 
 ### Shell Script
 - Lightweight alternative for automation
@@ -423,17 +425,25 @@ cosmic-bing-wallpaper/
 ├── bing-wallpaper.sh                  # Standalone shell script
 └── cosmic-bing-wallpaper/             # COSMIC GUI application
     ├── Cargo.toml                     # Rust dependencies
+    ├── CHANGELOG.md                   # Version history
+    ├── DEVELOPMENT.md                 # Technical learnings & solutions
     ├── justfile                       # Build automation
     ├── install.sh                     # Installation script
     ├── src/
-    │   ├── main.rs                    # Entry point (GUI/CLI/Tray modes)
+    │   ├── main.rs                    # Entry point (GUI/CLI/Tray/Daemon modes)
     │   ├── app.rs                     # COSMIC app (UI + state)
     │   ├── bing.rs                    # Bing API client
     │   ├── config.rs                  # Configuration & markets
-    │   └── tray.rs                    # System tray implementation
+    │   ├── daemon.rs                  # D-Bus daemon service
+    │   ├── dbus_client.rs             # D-Bus client proxy
+    │   └── tray.rs                    # System tray with theme-aware icons
     ├── resources/
     │   ├── *.desktop                  # Desktop entry file
-    │   ├── *.svg                      # Application icon
+    │   ├── *.svg                      # Application icons
+    │   ├── icon-on.png                # Tray icon (timer enabled, dark)
+    │   ├── icon-off.png               # Tray icon (timer disabled, dark)
+    │   ├── icon-on-light.png          # Tray icon (timer enabled, light)
+    │   ├── icon-off-light.png         # Tray icon (timer disabled, light)
     │   └── *.appdata.xml              # AppStream metadata
     ├── systemd/
     │   ├── cosmic-bing-wallpaper.service
@@ -480,12 +490,37 @@ The AppImage will be created in `appimage/build/`.
 - **tokio** - Async runtime for non-blocking operations
 - **reqwest** - HTTP client for API calls
 - **serde** - JSON serialization/deserialization
+- **zbus** - D-Bus IPC for daemon/client communication
+- **ksni** - StatusNotifierItem (system tray) protocol
+- **notify** - File system watching for theme changes
 
 ### Architecture
-The GUI app follows the Model-View-Update (MVU) pattern:
+
+The application uses a **daemon+clients** architecture for instant synchronization:
+
+```
+                    D-Bus (org.cosmicbing.Wallpaper1)
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+   GUI Client            Daemon              Tray Client
+   (app.rs)           (daemon.rs)            (tray.rs)
+```
+
+- **Daemon**: Background service managing wallpaper operations, timer control, and configuration
+- **GUI Client**: Full application window using libcosmic, communicates via D-Bus
+- **Tray Client**: System tray icon with menu, theme-aware icons that adapt to dark/light mode
+
+The GUI follows the Model-View-Update (MVU) pattern:
 - **Model** (`BingWallpaper`): Application state
 - **View** (`view_main`, `view_history`): UI rendering
 - **Update** (`update`): Message handling and state transitions
+
+### System Tray Features (v0.1.4+)
+
+- **Theme-aware icons**: Automatically switches between light/dark icons based on system theme
+- **Instant theme detection**: Uses inotify file watching (no polling)
+- **Embedded pixmaps**: Icons embedded in binary for reliable display across all configurations
 
 ### Build Commands
 ```bash
@@ -495,6 +530,14 @@ just run-release      # Build and run
 just check            # Run clippy lints
 just fmt              # Format code
 ```
+
+### Technical Documentation
+
+See [cosmic-bing-wallpaper/DEVELOPMENT.md](cosmic-bing-wallpaper/DEVELOPMENT.md) for detailed technical learnings including:
+- System tray implementation challenges and solutions
+- D-Bus daemon architecture
+- Dark/light mode detection
+- COSMIC desktop internals
 
 ## License
 
