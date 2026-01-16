@@ -98,11 +98,19 @@ fn print_help(program: &str) {
     println!("access to wallpaper functions via right-click menu.");
 }
 
+/// Maximum number of retry attempts for network operations
+const MAX_RETRIES: u32 = 3;
+
+/// Initial delay between retries (doubles each attempt)
+const INITIAL_RETRY_DELAY_SECS: u64 = 10;
+
 /// Runs the application in headless mode (no GUI).
 ///
 /// Used by the systemd timer to fetch and apply the wallpaper automatically.
+/// Includes retry logic with exponential backoff for network failures.
 fn run_headless() -> cosmic::iced::Result {
     use tokio::runtime::Runtime;
+    use std::time::Duration;
 
     let rt = Runtime::new().expect("Failed to create tokio runtime");
 
@@ -111,27 +119,52 @@ fn run_headless() -> cosmic::iced::Result {
 
         println!("Fetching Bing image for market: {}", config.market);
 
-        // Fetch image info
-        match bing::fetch_bing_image_info(&config.market).await {
-            Ok(image) => {
-                println!("Found: {}", image.title);
+        // Retry loop with exponential backoff
+        let mut last_error = String::new();
+        for attempt in 0..MAX_RETRIES {
+            if attempt > 0 {
+                let delay = INITIAL_RETRY_DELAY_SECS * (1 << (attempt - 1)); // 10s, 20s, 40s
+                println!("Retry {} of {} in {} seconds...", attempt, MAX_RETRIES - 1, delay);
+                tokio::time::sleep(Duration::from_secs(delay)).await;
+            }
 
-                // Download image
-                match bing::download_image(&image, &config.wallpaper_dir, &config.market).await {
-                    Ok(path) => {
-                        println!("Downloaded to: {}", path);
+            // Fetch image info
+            match bing::fetch_bing_image_info(&config.market).await {
+                Ok(image) => {
+                    println!("Found: {}", image.title);
 
-                        // Apply wallpaper
-                        match app::apply_wallpaper_headless(&path).await {
-                            Ok(()) => println!("Wallpaper applied successfully!"),
-                            Err(e) => eprintln!("Failed to apply wallpaper: {}", e),
+                    // Download image
+                    match bing::download_image(&image, &config.wallpaper_dir, &config.market).await {
+                        Ok(path) => {
+                            println!("Downloaded to: {}", path);
+
+                            // Apply wallpaper
+                            match app::apply_wallpaper_headless(&path).await {
+                                Ok(()) => {
+                                    println!("Wallpaper applied successfully!");
+                                    return; // Success - exit retry loop
+                                }
+                                Err(e) => {
+                                    last_error = format!("Failed to apply wallpaper: {}", e);
+                                    eprintln!("{}", last_error);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            last_error = format!("Failed to download: {}", e);
+                            eprintln!("{}", last_error);
                         }
                     }
-                    Err(e) => eprintln!("Failed to download: {}", e),
+                }
+                Err(e) => {
+                    last_error = format!("Failed to fetch: {}", e);
+                    eprintln!("{}", last_error);
                 }
             }
-            Err(e) => eprintln!("Failed to fetch: {}", e),
         }
+
+        // All retries exhausted
+        eprintln!("All {} attempts failed. Last error: {}", MAX_RETRIES, last_error);
     });
 
     Ok(())

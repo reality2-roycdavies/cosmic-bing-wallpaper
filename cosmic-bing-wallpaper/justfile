@@ -84,15 +84,13 @@ install-with-tray: install-local
     cat > ~/.config/systemd/user/cosmic-bing-wallpaper.service << 'EOF'
     [Unit]
     Description=Fetch and set Bing daily wallpaper for COSMIC desktop
-    After=network-online.target
+    After=network-online.target graphical-session.target
     Wants=network-online.target
 
     [Service]
     Type=oneshot
     ExecStart=%h/.local/bin/cosmic-bing-wallpaper --fetch-and-apply
     Environment=HOME=%h
-    Environment=DISPLAY=:0
-    Environment=WAYLAND_DISPLAY=wayland-1
     Environment=XDG_RUNTIME_DIR=/run/user/%U
 
     [Install]
@@ -114,10 +112,29 @@ install-with-tray: install-local
     WantedBy=timers.target
     EOF
 
+    # Create login/wake service (runs on graphical session start)
+    cat > ~/.config/systemd/user/cosmic-bing-wallpaper-login.service << 'EOF'
+    [Unit]
+    Description=Fetch Bing wallpaper on login/wake
+    After=graphical-session.target network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=oneshot
+    ExecStartPre=/bin/sleep 10
+    ExecStart=%h/.local/bin/cosmic-bing-wallpaper --fetch-and-apply
+    Environment=HOME=%h
+    Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+    [Install]
+    WantedBy=graphical-session.target
+    EOF
+
     systemctl --user daemon-reload
     systemctl --user enable cosmic-bing-wallpaper-tray.service
     systemctl --user enable --now cosmic-bing-wallpaper.timer
-    echo "Tray and daily update timer installed and enabled."
+    systemctl --user enable cosmic-bing-wallpaper-login.service
+    echo "Tray, daily update timer, and login trigger installed and enabled."
     echo "To start tray now: systemctl --user start cosmic-bing-wallpaper-tray.service"
 
 # Uninstall including tray autostart
@@ -126,9 +143,11 @@ uninstall-with-tray: uninstall-local
     systemctl --user stop cosmic-bing-wallpaper.timer 2>/dev/null || true
     systemctl --user disable cosmic-bing-wallpaper-tray.service 2>/dev/null || true
     systemctl --user disable cosmic-bing-wallpaper.timer 2>/dev/null || true
+    systemctl --user disable cosmic-bing-wallpaper-login.service 2>/dev/null || true
     rm -f ~/.config/systemd/user/cosmic-bing-wallpaper-tray.service
     rm -f ~/.config/systemd/user/cosmic-bing-wallpaper.service
     rm -f ~/.config/systemd/user/cosmic-bing-wallpaper.timer
+    rm -f ~/.config/systemd/user/cosmic-bing-wallpaper-login.service
     systemctl --user daemon-reload
 
 # Build and run

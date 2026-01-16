@@ -1034,6 +1034,26 @@ WantedBy=timers.target
     std::fs::write(systemd_dir.join("cosmic-bing-wallpaper.timer"), timer_content)
         .map_err(|e| format!("Failed to write timer file: {}", e))?;
 
+    // Write login service (runs on graphical session start / resume from sleep)
+    let login_service_content = format!(r#"[Unit]
+Description=Fetch Bing wallpaper on login/wake
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 10
+ExecStart={}
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+[Install]
+WantedBy=graphical-session.target
+"#, exec_path);
+
+    std::fs::write(systemd_dir.join("cosmic-bing-wallpaper-login.service"), &login_service_content)
+        .map_err(|e| format!("Failed to write login service file: {}", e))?;
+
     // Reload and enable
     let reload = tokio::process::Command::new("systemctl")
         .args(["--user", "daemon-reload"])
@@ -1045,22 +1065,34 @@ WantedBy=timers.target
         return Err("Failed to reload systemd daemon".to_string());
     }
 
-    let enable = tokio::process::Command::new("systemctl")
+    // Enable timer
+    let enable_timer = tokio::process::Command::new("systemctl")
         .args(["--user", "enable", "--now", "cosmic-bing-wallpaper.timer"])
         .output()
         .await
         .map_err(|e| format!("Failed to enable timer: {}", e))?;
 
-    if !enable.status.success() {
-        return Err(format!("Failed to enable timer: {}", String::from_utf8_lossy(&enable.stderr)));
+    if !enable_timer.status.success() {
+        return Err(format!("Failed to enable timer: {}", String::from_utf8_lossy(&enable_timer.stderr)));
+    }
+
+    // Enable login service
+    let enable_login = tokio::process::Command::new("systemctl")
+        .args(["--user", "enable", "cosmic-bing-wallpaper-login.service"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to enable login service: {}", e))?;
+
+    if !enable_login.status.success() {
+        return Err(format!("Failed to enable login service: {}", String::from_utf8_lossy(&enable_login.stderr)));
     }
 
     Ok(())
 }
 
-/// Removes the systemd user timer for automatic updates.
+/// Removes the systemd user timer and login service for automatic updates.
 ///
-/// Disables and stops the timer, then removes the unit files from
+/// Disables and stops both the timer and login service, then removes the unit files from
 /// `~/.config/systemd/user/`. Reloads the systemd daemon afterward.
 ///
 /// # Errors
@@ -1078,12 +1110,19 @@ async fn uninstall_timer() -> Result<(), String> {
         return Err(format!("Failed to disable timer: {}", String::from_utf8_lossy(&output.stderr)));
     }
 
+    // Disable login service (ignore errors - may not exist)
+    let _ = tokio::process::Command::new("systemctl")
+        .args(["--user", "disable", "cosmic-bing-wallpaper-login.service"])
+        .output()
+        .await;
+
     // Clean up unit files (errors ignored - files may not exist)
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let systemd_dir = home.join(".config/systemd/user");
 
     let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper.service"));
     let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper.timer"));
+    let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper-login.service"));
 
     // Reload daemon to pick up the removal
     let _ = tokio::process::Command::new("systemctl")
