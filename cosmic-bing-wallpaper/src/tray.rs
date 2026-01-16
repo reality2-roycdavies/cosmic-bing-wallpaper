@@ -221,63 +221,34 @@ impl Tray for BingWallpaperTray {
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
         // Provide multiple icon sizes - tray host picks the best one
         // Small sizes have larger/bolder indicators for visibility
-        let icon_variants: &[&[u8]] = match (self.timer_enabled, self.dark_mode) {
-            (true, true) => &[
-                include_bytes!("../resources/icon-on-light.png"),      // 64px
-                include_bytes!("../resources/icon-on-light-32.png"),
-                include_bytes!("../resources/icon-on-light-24.png"),
-                include_bytes!("../resources/icon-on-light-22.png"),
-                include_bytes!("../resources/icon-on-light-16.png"),
-            ],
-            (true, false) => &[
-                include_bytes!("../resources/icon-on.png"),            // 64px
-                include_bytes!("../resources/icon-on-32.png"),
-                include_bytes!("../resources/icon-on-24.png"),
-                include_bytes!("../resources/icon-on-22.png"),
-                include_bytes!("../resources/icon-on-16.png"),
-            ],
-            (false, true) => &[
-                include_bytes!("../resources/icon-off-light.png"),     // 64px
-                include_bytes!("../resources/icon-off-light-32.png"),
-                include_bytes!("../resources/icon-off-light-24.png"),
-                include_bytes!("../resources/icon-off-light-22.png"),
-                include_bytes!("../resources/icon-off-light-16.png"),
-            ],
-            (false, false) => &[
-                include_bytes!("../resources/icon-off.png"),           // 64px
-                include_bytes!("../resources/icon-off-32.png"),
-                include_bytes!("../resources/icon-off-24.png"),
-                include_bytes!("../resources/icon-off-22.png"),
-                include_bytes!("../resources/icon-off-16.png"),
-            ],
+        // Use 24px icons designed with bold indicators - COSMIC scales as needed
+        let icon_data: &[u8] = match (self.timer_enabled, self.dark_mode) {
+            (true, true) => include_bytes!("../resources/icon-on-light-24.png"),
+            (true, false) => include_bytes!("../resources/icon-on-24.png"),
+            (false, true) => include_bytes!("../resources/icon-off-light-24.png"),
+            (false, false) => include_bytes!("../resources/icon-off-24.png"),
         };
 
-        let mut icons = Vec::new();
+        let img = match image::load_from_memory(icon_data) {
+            Ok(img) => img.to_rgba8(),
+            Err(_) => return vec![],
+        };
 
-        for icon_data in icon_variants {
-            let img = match image::load_from_memory(icon_data) {
-                Ok(img) => img.to_rgba8(),
-                Err(_) => continue,
-            };
-
-            // Convert RGBA to ARGB (network byte order) which KSNI/DBus expects
-            let mut argb_data = Vec::with_capacity((img.width() * img.height() * 4) as usize);
-            for pixel in img.pixels() {
-                let [r, g, b, a] = pixel.0;
-                argb_data.push(a);
-                argb_data.push(r);
-                argb_data.push(g);
-                argb_data.push(b);
-            }
-
-            icons.push(ksni::Icon {
-                width: img.width() as i32,
-                height: img.height() as i32,
-                data: argb_data,
-            });
+        // Convert RGBA to ARGB (network byte order) which KSNI/DBus expects
+        let mut argb_data = Vec::with_capacity((img.width() * img.height() * 4) as usize);
+        for pixel in img.pixels() {
+            let [r, g, b, a] = pixel.0;
+            argb_data.push(a);
+            argb_data.push(r);
+            argb_data.push(g);
+            argb_data.push(b);
         }
 
-        icons
+        vec![ksni::Icon {
+            width: img.width() as i32,
+            height: img.height() as i32,
+            data: argb_data,
+        }]
     }
 
     fn title(&self) -> String {
