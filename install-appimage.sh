@@ -8,7 +8,7 @@
 # 2. Copies the AppImage there
 # 3. Extracts the icon
 # 4. Creates a .desktop file for app launcher integration
-# 5. Optionally sets up system tray autostart
+# 5. Optionally sets up system tray autostart (via XDG autostart)
 #
 # Usage:
 #   ./install-appimage.sh [OPTIONS] [path-to-appimage]
@@ -24,10 +24,11 @@ set -euo pipefail
 
 # Configuration
 APP_NAME="cosmic-bing-wallpaper"
+APP_ID="io.github.reality2_roycdavies.cosmic-bing-wallpaper"
 APPIMAGE_NAME="cosmic-bing-wallpaper-x86_64.AppImage"
 APPS_DIR="$HOME/Apps"
 DESKTOP_DIR="$HOME/.local/share/applications"
-SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+AUTOSTART_DIR="$HOME/.config/autostart"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
 SYMBOLIC_ICON_DIR="$HOME/.local/share/icons/hicolor/symbolic/apps"
 
@@ -138,21 +139,30 @@ trap "rm -rf $TEMP_DIR" EXIT
 cd "$TEMP_DIR"
 "$DEST_APPIMAGE" --appimage-extract >/dev/null 2>&1 || true
 
-# Find and copy the main icon
-if [ -f "squashfs-root/io.github.cosmic-bing-wallpaper.svg" ]; then
-    cp "squashfs-root/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/"
+# Find and copy the main icon (check both old and new app ID patterns)
+if [ -f "squashfs-root/$APP_ID.svg" ]; then
+    cp "squashfs-root/$APP_ID.svg" "$ICON_DIR/"
     info "App icon installed"
+elif [ -f "squashfs-root/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg" ]; then
+    cp "squashfs-root/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg" "$ICON_DIR/"
+    info "App icon installed"
+elif [ -f "squashfs-root/io.github.cosmic-bing-wallpaper.svg" ]; then
+    cp "squashfs-root/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/$APP_ID.svg"
+    info "App icon installed (renamed to new app ID)"
 elif [ -f "squashfs-root/usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg" ]; then
-    cp "squashfs-root/usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/"
-    info "App icon installed"
+    cp "squashfs-root/usr/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg" "$ICON_DIR/$APP_ID.svg"
+    info "App icon installed (renamed to new app ID)"
 else
     warn "Could not extract app icon from AppImage"
 fi
 
 # Find and copy the symbolic icon (for system tray)
-if [ -f "squashfs-root/usr/share/icons/hicolor/symbolic/apps/io.github.cosmic-bing-wallpaper-symbolic.svg" ]; then
-    cp "squashfs-root/usr/share/icons/hicolor/symbolic/apps/io.github.cosmic-bing-wallpaper-symbolic.svg" "$SYMBOLIC_ICON_DIR/"
+if [ -f "squashfs-root/usr/share/icons/hicolor/symbolic/apps/$APP_ID-symbolic.svg" ]; then
+    cp "squashfs-root/usr/share/icons/hicolor/symbolic/apps/$APP_ID-symbolic.svg" "$SYMBOLIC_ICON_DIR/"
     info "Symbolic icon installed (for system tray)"
+elif [ -f "squashfs-root/usr/share/icons/hicolor/symbolic/apps/io.github.cosmic-bing-wallpaper-symbolic.svg" ]; then
+    cp "squashfs-root/usr/share/icons/hicolor/symbolic/apps/io.github.cosmic-bing-wallpaper-symbolic.svg" "$SYMBOLIC_ICON_DIR/$APP_ID-symbolic.svg"
+    info "Symbolic icon installed (renamed to new app ID)"
 else
     warn "Could not extract symbolic icon from AppImage"
 fi
@@ -163,13 +173,13 @@ cd - >/dev/null
 info "Creating desktop entry..."
 mkdir -p "$DESKTOP_DIR"
 
-cat > "$DESKTOP_DIR/cosmic-bing-wallpaper.desktop" << EOF
+cat > "$DESKTOP_DIR/$APP_ID.desktop" << EOF
 [Desktop Entry]
 Name=Bing Wallpaper
 GenericName=Wallpaper Manager
 Comment=Bing Daily Wallpaper for COSMIC Desktop
 Exec=$DEST_APPIMAGE
-Icon=io.github.cosmic-bing-wallpaper
+Icon=$APP_ID
 Terminal=false
 Type=Application
 Categories=Settings;DesktopSettings;
@@ -177,67 +187,25 @@ Keywords=wallpaper;bing;background;desktop;cosmic;
 StartupNotify=true
 EOF
 
-# Set up tray autostart and daily timer if requested
+# Set up tray autostart if requested
 if [ "$INSTALL_TRAY" = true ]; then
-    info "Setting up systemd services for tray and daily updates..."
-    mkdir -p "$SYSTEMD_USER_DIR"
+    info "Setting up tray autostart..."
+    mkdir -p "$AUTOSTART_DIR"
 
-    # Create tray service (starts on COSMIC session) - uses %h specifier for portability
-    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper-tray.service" << 'EOF'
-[Unit]
-Description=Bing Wallpaper system tray for COSMIC desktop
-After=cosmic-session.target
-PartOf=cosmic-session.target
-
-[Service]
-Type=simple
-ExecStart=%h/Apps/cosmic-bing-wallpaper-x86_64.AppImage --tray
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=cosmic-session.target
+    # Create XDG autostart entry
+    cat > "$AUTOSTART_DIR/$APP_ID.desktop" << EOF
+[Desktop Entry]
+Name=Bing Wallpaper Tray
+Comment=Daily Bing wallpaper for COSMIC desktop
+Exec=$DEST_APPIMAGE --tray
+Icon=$APP_ID
+Terminal=false
+Type=Application
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
 EOF
-
-    # Create daily fetch service - uses %h and %U specifiers for portability
-    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.service" << 'EOF'
-[Unit]
-Description=Fetch and set Bing daily wallpaper for COSMIC desktop
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=%h/Apps/cosmic-bing-wallpaper-x86_64.AppImage --fetch-and-apply
-Environment=HOME=%h
-Environment=DISPLAY=:0
-Environment=WAYLAND_DISPLAY=wayland-1
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-
-[Install]
-WantedBy=default.target
-EOF
-
-    # Create daily timer
-    cat > "$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.timer" << 'EOF'
-[Unit]
-Description=Daily Bing wallpaper update timer
-
-[Timer]
-OnCalendar=*-*-* 08:00:00
-OnBootSec=5min
-RandomizedDelaySec=300
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-    # Reload and enable services
-    systemctl --user daemon-reload
-    systemctl --user enable cosmic-bing-wallpaper-tray.service
-    systemctl --user enable --now cosmic-bing-wallpaper.timer
-    info "Tray and daily timer installed and enabled"
+    info "Tray autostart installed (will start on next login)"
 fi
 
 # Update desktop database
@@ -257,23 +225,19 @@ echo "Bing Wallpaper has been installed and should now appear in your"
 echo "application launcher."
 echo ""
 echo "Installed to: $DEST_APPIMAGE"
-echo "Desktop file: $DESKTOP_DIR/cosmic-bing-wallpaper.desktop"
+echo "Desktop file: $DESKTOP_DIR/$APP_ID.desktop"
 if [ "$INSTALL_TRAY" = true ]; then
-    echo "Systemd services: tray + daily timer installed"
+    echo "Autostart: $AUTOSTART_DIR/$APP_ID.desktop"
     echo ""
     echo -e "${CYAN}To start the tray now:${NC}"
-    echo "  systemctl --user start cosmic-bing-wallpaper-tray.service"
+    echo "  $DEST_APPIMAGE --tray &"
 fi
 echo ""
 echo "To uninstall, run:"
 echo "  rm \"$DEST_APPIMAGE\""
-echo "  rm \"$DESKTOP_DIR/cosmic-bing-wallpaper.desktop\""
-echo "  rm \"$ICON_DIR/io.github.cosmic-bing-wallpaper.svg\""
-echo "  rm \"$SYMBOLIC_ICON_DIR/io.github.cosmic-bing-wallpaper-symbolic.svg\""
+echo "  rm \"$DESKTOP_DIR/$APP_ID.desktop\""
+echo "  rm \"$ICON_DIR/$APP_ID.svg\""
+echo "  rm \"$SYMBOLIC_ICON_DIR/$APP_ID-symbolic.svg\""
 if [ "$INSTALL_TRAY" = true ]; then
-    echo "  systemctl --user disable --now cosmic-bing-wallpaper-tray.service"
-    echo "  systemctl --user disable --now cosmic-bing-wallpaper.timer"
-    echo "  rm \"$SYSTEMD_USER_DIR/cosmic-bing-wallpaper-tray.service\""
-    echo "  rm \"$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.service\""
-    echo "  rm \"$SYSTEMD_USER_DIR/cosmic-bing-wallpaper.timer\""
+    echo "  rm \"$AUTOSTART_DIR/$APP_ID.desktop\""
 fi
