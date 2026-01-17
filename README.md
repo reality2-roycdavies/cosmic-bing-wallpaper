@@ -159,7 +159,7 @@ This project includes both a simple shell script for quick use and a full native
 - **History Browser**: Browse and re-apply previously downloaded wallpapers
 - **Region Selector**: Choose from 21 Bing markets (US, UK, Germany, Japan, etc.)
 - **One-click Apply**: Set any image as your desktop wallpaper instantly
-- **Auto-Update Timer**: Install/uninstall systemd timer directly from the app
+- **Auto-Update Timer**: Enable/disable daily updates directly from the app
 - **Status Display**: Shows next scheduled update time
 
 ### System Tray Mode
@@ -331,27 +331,13 @@ Edit the script to change your preferred region (default is `en-US`).
 
 ## Automatic Daily Updates
 
-### From the GUI App
+### From the GUI or Tray
 
-1. Open the application
-2. Scroll to the "Daily Auto-Update" section
-3. Click **"Install Auto-Update Timer"**
-4. The wallpaper will automatically update daily at 8:00 AM
+1. Open the application (or right-click the tray icon)
+2. Toggle "Daily Update" to enable automatic updates
+3. The wallpaper will automatically update daily at 8:00 AM
 
-### Manual Timer Installation
-
-```bash
-cd cosmic-bing-wallpaper/cosmic-bing-wallpaper/systemd
-
-# Install the timer
-./install-timer.sh
-
-# Check status
-systemctl --user status cosmic-bing-wallpaper.timer
-
-# Uninstall
-./uninstall-timer.sh
-```
+The timer runs within the tray process - no systemd services required. This makes the app fully compatible with Flatpak sandboxes.
 
 ## System Tray Mode
 
@@ -367,30 +353,24 @@ cosmic-bing-wallpaper --tray
 
 The tray icon provides a right-click menu with:
 - **Fetch Today's Wallpaper**: Download and apply the latest Bing image
-- **Open Application**: Launch the full GUI window
-- **Open Wallpaper Folder**: Browse downloaded images
+- **Toggle Daily Update**: Enable/disable automatic daily updates
+- **Settings**: Launch the full GUI window
 - **Quit**: Exit the tray application
 
 ### Auto-start Tray on Login
 
-**Using just (recommended for source builds):**
+The tray automatically creates an XDG autostart entry (`~/.config/autostart/`) on first run, so it will start on login without manual setup.
+
+**Using just (for source builds):**
 ```bash
 just install-with-tray
 ```
 
-This installs the app and sets up the tray to start automatically on login.
-
-**Manual setup:**
+**Using Flatpak:**
 ```bash
-mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/cosmic-bing-wallpaper-tray.desktop << EOF
-[Desktop Entry]
-Name=Bing Wallpaper Tray
-Exec=cosmic-bing-wallpaper --tray
-Type=Application
-X-GNOME-Autostart-enabled=true
-EOF
+flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
 ```
+The Flatpak version also auto-creates its autostart entry.
 
 ## Configuration
 
@@ -435,13 +415,14 @@ cosmic-bing-wallpaper/
     ├── justfile                       # Build automation
     ├── install.sh                     # Installation script
     ├── src/
-    │   ├── main.rs                    # Entry point (GUI/CLI/Tray/Daemon modes)
+    │   ├── main.rs                    # Entry point (GUI/Tray modes)
     │   ├── app.rs                     # COSMIC app (UI + state)
     │   ├── bing.rs                    # Bing API client
     │   ├── config.rs                  # Configuration & markets
-    │   ├── daemon.rs                  # D-Bus daemon service
-    │   ├── dbus_client.rs             # D-Bus client proxy
-    │   └── tray.rs                    # System tray with theme-aware icons
+    │   ├── service.rs                 # D-Bus service (embedded in tray)
+    │   ├── timer.rs                   # Internal timer for daily updates
+    │   ├── dbus_client.rs             # D-Bus client proxy (for GUI)
+    │   └── tray.rs                    # System tray with embedded service
     ├── resources/
     │   ├── *.desktop                  # Desktop entry file
     │   ├── *.svg                      # Application icons
@@ -501,46 +482,54 @@ The AppImage will be created in `appimage/build/`.
 
 ### Architecture
 
-The application uses a **daemon+clients** architecture (v0.1.4+) for instant synchronization between components:
+The application uses a **tray-with-embedded-service** architecture for Flatpak compatibility:
 
 ```
-                    D-Bus (org.cosmicbing.Wallpaper1)
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-   GUI Client            Daemon              Tray Client
-   (app.rs)           (daemon.rs)            (tray.rs)
+┌──────────────────────────────────────────────────┐
+│               Tray Process                        │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐ │
+│  │ D-Bus Svc  │  │  Timer     │  │  Tray Icon │ │
+│  │ (service)  │  │ (internal) │  │  (ksni)    │ │
+│  └────────────┘  └────────────┘  └────────────┘ │
+└──────────────────────────────────────────────────┘
+        ▲
+        │ D-Bus calls
+┌───────┴───────┐
+│      GUI      │
+│ (D-Bus client)│
+└───────────────┘
 ```
 
 #### Components
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| **Daemon** | `daemon.rs` | Background D-Bus service managing wallpaper operations, timer control, and configuration. Auto-activates via D-Bus when needed. |
-| **GUI Client** | `app.rs` | Full application window using libcosmic. Communicates with daemon via D-Bus for all operations. |
-| **Tray Client** | `tray.rs` | System tray icon with menu. Theme-aware icons adapt to dark/light mode instantly via inotify file watching. |
-| **D-Bus Client** | `dbus_client.rs` | Shared proxy for both GUI and tray to communicate with daemon. |
+| **Service** | `service.rs` | D-Bus service embedded in tray, managing wallpaper operations and timer control. |
+| **Timer** | `timer.rs` | Internal async timer for daily updates (no systemd required). |
+| **GUI Client** | `app.rs` | Full application window using libcosmic. Communicates with tray's D-Bus service. |
+| **Tray** | `tray.rs` | System tray with embedded service. Theme-aware icons via inotify file watching. |
+| **D-Bus Client** | `dbus_client.rs` | Proxy for GUI to communicate with tray's service. |
 
 #### D-Bus Interface
 
-The daemon exposes `org.cosmicbing.Wallpaper1` with these methods:
+The tray exposes `org.cosmicbing.Wallpaper1` with these methods:
 - `FetchWallpaper(apply: bool) → String` - Fetch today's wallpaper
 - `GetTimerEnabled() → bool` / `SetTimerEnabled(bool)` - Timer control
 - `GetWallpaperDir() → String` - Get configured directory
-- `GetCurrentWallpaper() → String` - Get active wallpaper path
+- `ApplyWallpaper(path: String)` - Apply a specific wallpaper
 
 #### Why This Architecture?
 
-The original monolithic design had problems:
-- GUI and tray couldn't communicate state changes
-- Timer state was duplicated and could get out of sync
-- Polling required to detect external changes
+The previous daemon+clients model used systemd for:
+- Running a separate daemon process
+- Timer-based scheduling
+- Auto-starting on login
 
-The daemon+clients model provides:
-- **Single source of truth**: Daemon owns all state
-- **Instant sync**: Changes propagate immediately between GUI and tray
-- **Clean separation**: UI code is purely UI, no business logic
-- **Extensibility**: Other apps can use the D-Bus API
+This didn't work in Flatpak sandboxes. The new architecture:
+- **Embedded service**: D-Bus service runs inside the tray process
+- **Internal timer**: Scheduling handled by async Rust code, not systemd
+- **XDG autostart**: Login startup via standard `.desktop` files
+- **Flatpak compatible**: No systemd dependencies
 
 The GUI follows the Model-View-Update (MVU) pattern:
 - **Model** (`BingWallpaper`): Application state
