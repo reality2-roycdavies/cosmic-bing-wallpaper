@@ -489,6 +489,18 @@ pub fn run_tray() -> Result<(), String> {
             }
         }
 
+        // Refresh lockfile timestamp every 30 seconds to indicate we're still running
+        static LOCKFILE_REFRESH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let last_refresh = LOCKFILE_REFRESH.load(std::sync::atomic::Ordering::Relaxed);
+        if now - last_refresh >= 30 {
+            crate::create_tray_lockfile();
+            LOCKFILE_REFRESH.store(now, std::sync::atomic::Ordering::Relaxed);
+        }
+
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
 

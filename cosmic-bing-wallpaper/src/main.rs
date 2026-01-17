@@ -55,19 +55,21 @@ fn tray_lockfile_path() -> std::path::PathBuf {
 }
 
 /// Check if the tray is already running using a lockfile
+/// In Flatpak, we can't check /proc/PID due to PID namespace isolation,
+/// so we just check if the lockfile exists (with a timestamp check for stale files)
 fn is_tray_running() -> bool {
     let lockfile = tray_lockfile_path();
 
-    if let Ok(mut file) = fs::File::open(&lockfile) {
-        let mut contents = String::new();
-        if file.read_to_string(&mut contents).is_ok() {
-            if let Ok(pid) = contents.trim().parse::<u32>() {
-                let proc_path = format!("/proc/{}", pid);
-                if std::path::Path::new(&proc_path).exists() {
-                    return true;
-                }
+    if let Ok(metadata) = fs::metadata(&lockfile) {
+        // Check if lockfile is recent (less than 1 minute old means tray is likely running)
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(elapsed) = modified.elapsed() {
+                // If lockfile was modified less than 60 seconds ago, tray is running
+                return elapsed.as_secs() < 60;
             }
         }
+        // If we can't check time, assume running if file exists
+        return true;
     }
     false
 }
