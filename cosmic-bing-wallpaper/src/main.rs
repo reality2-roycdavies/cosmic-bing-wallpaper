@@ -41,6 +41,52 @@ mod dbus_client;
 
 use app::BingWallpaper;
 use cosmic::iced::Size;
+use std::fs;
+use std::io::{Read, Write};
+use std::process::Command;
+
+/// Get the path to the tray lockfile
+/// Uses config directory to work correctly in Flatpak sandboxes
+fn tray_lockfile_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .map(|d| d.join("cosmic-bing-wallpaper"))
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("tray.lock")
+}
+
+/// Check if the tray is already running using a lockfile
+fn is_tray_running() -> bool {
+    let lockfile = tray_lockfile_path();
+
+    if let Ok(mut file) = fs::File::open(&lockfile) {
+        let mut contents = String::new();
+        if file.read_to_string(&mut contents).is_ok() {
+            if let Ok(pid) = contents.trim().parse::<u32>() {
+                let proc_path = format!("/proc/{}", pid);
+                if std::path::Path::new(&proc_path).exists() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Create a lockfile to indicate the tray is running
+pub fn create_tray_lockfile() {
+    let lockfile = tray_lockfile_path();
+    if let Some(parent) = lockfile.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::File::create(&lockfile) {
+        let _ = write!(file, "{}", std::process::id());
+    }
+}
+
+/// Remove the lockfile when tray exits
+pub fn remove_tray_lockfile() {
+    let _ = fs::remove_file(tray_lockfile_path());
+}
 
 /// Application entry point.
 ///
@@ -56,9 +102,17 @@ fn main() -> cosmic::iced::Result {
     if args.len() > 1 {
         match args[1].as_str() {
             "--tray" | "-t" => {
+                // Check if tray is already running
+                if is_tray_running() {
+                    println!("Bing Wallpaper tray is already running.");
+                    return Ok(());
+                }
                 // Run in system tray mode (background)
                 println!("Starting Bing Wallpaper in system tray...");
-                if let Err(e) = tray::run_tray() {
+                create_tray_lockfile();
+                let result = tray::run_tray();
+                remove_tray_lockfile();
+                if let Err(e) = result {
                     eprintln!("Tray error: {}", e);
                     std::process::exit(1);
                 }
@@ -90,7 +144,20 @@ fn main() -> cosmic::iced::Result {
         }
     }
 
-    // Default: Launch GUI
+    // Default: Smart mode - start tray if not running, then launch GUI
+    if !is_tray_running() {
+        println!("Starting Bing Wallpaper tray in background...");
+        if let Err(e) = Command::new(std::env::current_exe().unwrap_or_else(|_| "cosmic-bing-wallpaper".into()))
+            .arg("--tray")
+            .spawn()
+        {
+            eprintln!("Warning: Failed to start tray: {}", e);
+        }
+        // Give tray time to initialize
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    // Launch GUI
     let settings = cosmic::app::Settings::default()
         .size(Size::new(850.0, 750.0))
         .size_limits(

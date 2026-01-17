@@ -13,12 +13,9 @@ finish-args:
   - --socket=wayland
   # Network access for Bing API
   - --share=network
-  # System tray via StatusNotifierItem
-  - --talk-name=org.kde.StatusNotifierWatcher
-  - --talk-name=org.freedesktop.StatusNotifierWatcher
-  # D-Bus for daemon communication
-  # Exception requested: daemon uses org.cosmicbing.Wallpaper1 for IPC
-  - --own-name=org.cosmicbing.Wallpaper1
+  # System tray and D-Bus daemon communication
+  # Exception requested: StatusNotifierItem and daemon IPC require session bus
+  - --socket=session-bus
   # Read COSMIC theme and background config
   - --filesystem=~/.config/cosmic:rw
   # App config and wallpaper storage
@@ -47,5 +44,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-        tag: v0.2.2
+        tag: v0.2.3
       - cargo-sources.json
