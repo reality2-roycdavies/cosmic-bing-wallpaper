@@ -13,6 +13,7 @@ This is the first project developed using this approach, followed by [cosmic-run
 | Document | Description |
 |----------|-------------|
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Technical learnings and solutions discovered during development |
+| [FLATPAK-JOURNEY.md](FLATPAK-JOURNEY.md) | The complete story of making these apps Flatpak-compatible |
 | [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | Analysis of patterns in AI-assisted development |
 | [RETROSPECTIVE.md](RETROSPECTIVE.md) | Candid analysis of what worked and what didn't |
 | [transcripts/](transcripts/) | Complete conversation logs from the development sessions |
