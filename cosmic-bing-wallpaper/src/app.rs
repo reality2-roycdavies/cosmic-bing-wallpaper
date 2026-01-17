@@ -37,7 +37,7 @@
 use chrono;
 use cosmic::app::Core;
 use cosmic::iced::{Length, ContentFit};
-use cosmic::widget::{self, button, column, container, row, text, dropdown, scrollable};
+use cosmic::widget::{self, button, column, container, row, text, dropdown, scrollable, settings, toggler};
 use cosmic::{Action, Application, Element, Task};
 use std::path::PathBuf;
 
@@ -501,76 +501,60 @@ impl BingWallpaper {
     }
 
     fn view_main(&self) -> Element<'_, Message> {
-        let title = container(text::title1("Bing Daily Wallpaper"))
-            .width(Length::Fill)
-            .center_x(Length::Fill);
+        // Today's Wallpaper section - image preview in a card
+        let image_title = self.current_image.as_ref()
+            .map(|img| img.title.clone())
+            .unwrap_or_else(|| "No image loaded".to_string());
 
-        // Image preview - center the image using a column with center alignment
-        let preview: Element<_> = if let Some(path) = &self.image_path {
-            column()
+        let image_copyright = self.current_image.as_ref()
+            .map(|img| img.copyright.clone())
+            .unwrap_or_default();
+
+        let preview_content: Element<_> = if let Some(path) = &self.image_path {
+            widget::image(path)
+                .content_fit(ContentFit::Contain)
+                .height(Length::Fixed(280.0))
                 .width(Length::Fill)
-                .align_x(cosmic::iced::Alignment::Center)
-                .push(
-                    widget::image(path)
-                        .content_fit(ContentFit::Contain)
-                        .height(Length::Fixed(300.0))
-                )
                 .into()
         } else {
-            container(
-                text::body("No image loaded")
-            )
-            .padding(40)
-            .width(Length::Fill)
-            .center_x(Length::Fill)
-            .class(cosmic::theme::Container::Card)
-            .into()
-        };
-
-        // Image info - centered
-        let image_info: Element<_> = if let Some(img) = &self.current_image {
-            column()
-                .spacing(4)
-                .align_x(cosmic::iced::Alignment::Center)
-                .width(Length::Fill)
-                .push(text::heading(img.title.clone()))
-                .push(text::caption(img.copyright.clone()))
-                .into()
-        } else {
-            container(text::body("Fetch an image to see details"))
+            container(text::body("Click 'Fetch' to download today's wallpaper"))
+                .padding(60)
                 .width(Length::Fill)
                 .center_x(Length::Fill)
                 .into()
         };
 
-        // Status - centered
-        let status = container(text::body(self.status_message.clone()))
+        let preview_card = container(preview_content)
             .width(Length::Fill)
-            .center_x(Length::Fill);
+            .class(cosmic::theme::Container::Card);
 
-        // Region selector - centered
-        let region_selector = container(
-            row()
-                .spacing(12)
-                .align_y(cosmic::iced::Alignment::Center)
-                .push(text::body("Region:"))
-                .push(
-                    container(
-                        dropdown(&self.market_names, Some(self.selected_market_idx), Message::MarketSelected)
-                            .width(Length::Fixed(180.0))
-                    )
-                    .padding(4)
-                    .class(cosmic::theme::Container::Card)
+        let wallpaper_section = settings::section()
+            .title("Today's Wallpaper")
+            .add(preview_card)
+            .add(
+                settings::item(
+                    "Title",
+                    text::body(image_title),
                 )
-        )
-        .width(Length::Fill)
-        .center_x(Length::Fill);
+            )
+            .add(
+                settings::item(
+                    "Copyright",
+                    text::caption(image_copyright),
+                )
+            )
+            .add(
+                settings::item(
+                    "Status",
+                    text::caption(self.status_message.clone()),
+                )
+            );
 
-        // Action buttons - centered
-        let fetch_btn = button::standard("Fetch Today's Image")
+        // Actions section
+        let fetch_btn = button::standard("Fetch")
             .on_press_maybe(if self.is_loading { None } else { Some(Message::FetchToday) });
 
-        let apply_btn = button::suggested("Apply as Wallpaper")
+        let apply_btn = button::suggested("Apply")
             .on_press_maybe(
                 if self.is_loading || self.image_path.is_none() {
                     None
@@ -579,75 +563,73 @@ impl BingWallpaper {
                 }
             );
 
-        let history_btn = button::standard("Downloaded")
+        let history_btn = button::standard("History")
             .on_press(Message::ShowHistory);
 
-        let buttons = container(
-            row()
-                .spacing(12)
-                .push(fetch_btn)
-                .push(apply_btn)
-                .push(history_btn)
-        )
-        .width(Length::Fill)
-        .center_x(Length::Fill);
+        let actions_section = settings::section()
+            .title("Actions")
+            .add(
+                settings::item_row(vec![
+                    fetch_btn.into(),
+                    apply_btn.into(),
+                    history_btn.into(),
+                ])
+            );
 
-        // Auto-update section with timer status
-        let timer_info = match &self.timer_status {
-            TimerStatus::Checking => text::caption("Checking timer status...".to_string()),
-            TimerStatus::NotInstalled => text::caption("Timer not installed".to_string()),
-            TimerStatus::Installed { next_run } => text::caption(format!("Next run: {}", next_run)),
-            TimerStatus::Error(e) => text::caption(format!("Timer error: {}", e)),
+        // Settings section
+        let timer_enabled = matches!(&self.timer_status, TimerStatus::Installed { .. });
+        let timer_description = match &self.timer_status {
+            TimerStatus::Checking => "Checking...".to_string(),
+            TimerStatus::NotInstalled => "Disabled".to_string(),
+            TimerStatus::Installed { next_run } => format!("Next: {}", next_run),
+            TimerStatus::Error(e) => format!("Error: {}", e),
         };
 
-        let timer_button: Element<_> = match &self.timer_status {
-            TimerStatus::NotInstalled => {
-                button::suggested("Enable Daily Update")
-                    .on_press(Message::InstallTimer)
-                    .into()
-            }
-            TimerStatus::Installed { .. } => {
-                button::destructive("Disable Daily Update")
-                    .on_press(Message::UninstallTimer)
-                    .into()
-            }
-            _ => {
-                button::standard("Check Status")
-                    .on_press(Message::CheckTimerStatus)
-                    .into()
-            }
-        };
+        let settings_section = settings::section()
+            .title("Settings")
+            .add(
+                settings::item(
+                    "Region",
+                    dropdown(&self.market_names, Some(self.selected_market_idx), Message::MarketSelected)
+                        .width(Length::Fixed(200.0)),
+                )
+            )
+            .add(
+                settings::flex_item(
+                    "Daily Update",
+                    row()
+                        .spacing(12)
+                        .align_y(cosmic::iced::Alignment::Center)
+                        .push(text::caption(timer_description))
+                        .push(
+                            toggler(timer_enabled)
+                                .on_toggle(|enabled| {
+                                    if enabled {
+                                        Message::InstallTimer
+                                    } else {
+                                        Message::UninstallTimer
+                                    }
+                                })
+                        ),
+                )
+            );
 
-        let auto_update_section = container(
-            column()
-                .spacing(8)
-                .align_x(cosmic::iced::Alignment::Center)
-                .push(text::body("Daily Update"))
-                .push(timer_info)
-                .push(timer_button)
+        // Main content using settings::view_column for proper COSMIC styling
+        let content = settings::view_column(vec![
+            wallpaper_section.into(),
+            actions_section.into(),
+            settings_section.into(),
+        ]);
+
+        widget::scrollable(
+            container(content)
+                .width(Length::Fill)
+                .max_width(800)
+                .padding(16)
         )
         .width(Length::Fill)
-        .center_x(Length::Fill);
-
-        // Main content
-        let content = column()
-            .spacing(16)
-            .padding(20)
-            .max_width(800)
-            .push(title)
-            .push(preview)
-            .push(image_info)
-            .push(status)
-            .push(region_selector)
-            .push(buttons)
-            .push(widget::divider::horizontal::default())
-            .push(auto_update_section);
-
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .into()
+        .height(Length::Fill)
+        .into()
     }
 
     fn view_history(&self) -> Element<'_, Message> {
