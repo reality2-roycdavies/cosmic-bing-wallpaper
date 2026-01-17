@@ -30,6 +30,26 @@ use zbus::{connection, interface, SignalContext};
 use crate::bing::{self, BingImage};
 use crate::config::Config;
 
+/// Check if running inside a Flatpak sandbox
+fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Run systemctl command, using flatpak-spawn when in Flatpak sandbox
+fn run_systemctl(args: &[&str]) -> std::io::Result<std::process::Output> {
+    if is_flatpak() {
+        let mut spawn_args = vec!["--host", "systemctl"];
+        spawn_args.extend(args);
+        std::process::Command::new("flatpak-spawn")
+            .args(&spawn_args)
+            .output()
+    } else {
+        std::process::Command::new("systemctl")
+            .args(args)
+            .output()
+    }
+}
+
 /// Helper to run async code that requires tokio runtime (like reqwest)
 /// within the zbus async context which uses a different executor.
 fn run_in_tokio<T>(future: impl Future<Output = T>) -> T {
@@ -365,25 +385,19 @@ fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
 
 /// Check if the systemd timer is enabled
 fn is_timer_enabled() -> bool {
-    std::process::Command::new("systemctl")
-        .args(["--user", "is-enabled", "cosmic-bing-wallpaper.timer"])
-        .output()
+    run_systemctl(&["--user", "is-enabled", "cosmic-bing-wallpaper.timer"])
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 /// Get the next scheduled timer run time
 fn get_timer_next_run() -> String {
-    let output = std::process::Command::new("systemctl")
-        .args(["--user", "is-active", "cosmic-bing-wallpaper.timer"])
-        .output();
+    let output = run_systemctl(&["--user", "is-active", "cosmic-bing-wallpaper.timer"]);
 
     match output {
         Ok(out) if String::from_utf8_lossy(&out.stdout).trim() == "active" => {
-            let next_output = std::process::Command::new("systemctl")
-                .args(["--user", "show", "cosmic-bing-wallpaper.timer",
-                       "--property=NextElapseUSecRealtime"])
-                .output();
+            let next_output = run_systemctl(&["--user", "show", "cosmic-bing-wallpaper.timer",
+                       "--property=NextElapseUSecRealtime"]);
 
             match next_output {
                 Ok(out) => {
@@ -419,19 +433,25 @@ fn install_timer() -> Result<(), String> {
     std::fs::create_dir_all(&systemd_dir)
         .map_err(|e| format!("Failed to create systemd directory: {}", e))?;
 
-    // Find executable
-    let local_bin = home.join(".local/bin/cosmic-bing-wallpaper");
-    let system_bin = std::path::Path::new("/usr/local/bin/cosmic-bing-wallpaper");
-    let local_script = home.join(".local/share/cosmic-bing-wallpaper/bing-wallpaper.sh");
-
-    let exec_path = if local_bin.exists() {
-        format!("{} --fetch-and-apply", local_bin.display())
-    } else if system_bin.exists() {
-        format!("{} --fetch-and-apply", system_bin.display())
-    } else if local_script.exists() {
-        local_script.to_string_lossy().to_string()
+    // Determine the executable path based on environment
+    let exec_path = if is_flatpak() {
+        // In Flatpak, use flatpak run to invoke the app
+        "flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --fetch-and-apply".to_string()
     } else {
-        return Err("No executable found. Please install the app first.".to_string());
+        // Find executable
+        let local_bin = home.join(".local/bin/cosmic-bing-wallpaper");
+        let system_bin = std::path::Path::new("/usr/local/bin/cosmic-bing-wallpaper");
+        let local_script = home.join(".local/share/cosmic-bing-wallpaper/bing-wallpaper.sh");
+
+        if local_bin.exists() {
+            format!("{} --fetch-and-apply", local_bin.display())
+        } else if system_bin.exists() {
+            format!("{} --fetch-and-apply", system_bin.display())
+        } else if local_script.exists() {
+            local_script.to_string_lossy().to_string()
+        } else {
+            return Err("No executable found. Please install the app first.".to_string())
+        }
     };
 
     // Write service file
@@ -491,27 +511,21 @@ WantedBy=graphical-session.target
         .map_err(|e| format!("Failed to write login service file: {}", e))?;
 
     // Reload and enable (using blocking commands - these are quick operations)
-    let reload = std::process::Command::new("systemctl")
-        .args(["--user", "daemon-reload"])
-        .output()
+    let reload = run_systemctl(&["--user", "daemon-reload"])
         .map_err(|e| format!("Failed to reload systemd: {}", e))?;
 
     if !reload.status.success() {
         return Err("Failed to reload systemd daemon".to_string());
     }
 
-    let enable_timer = std::process::Command::new("systemctl")
-        .args(["--user", "enable", "--now", "cosmic-bing-wallpaper.timer"])
-        .output()
+    let enable_timer = run_systemctl(&["--user", "enable", "--now", "cosmic-bing-wallpaper.timer"])
         .map_err(|e| format!("Failed to enable timer: {}", e))?;
 
     if !enable_timer.status.success() {
         return Err(format!("Failed to enable timer: {}", String::from_utf8_lossy(&enable_timer.stderr)));
     }
 
-    let enable_login = std::process::Command::new("systemctl")
-        .args(["--user", "enable", "cosmic-bing-wallpaper-login.service"])
-        .output()
+    let enable_login = run_systemctl(&["--user", "enable", "cosmic-bing-wallpaper-login.service"])
         .map_err(|e| format!("Failed to enable login service: {}", e))?;
 
     if !enable_login.status.success() {
@@ -523,18 +537,14 @@ WantedBy=graphical-session.target
 
 /// Uninstall the systemd timer
 fn uninstall_timer() -> Result<(), String> {
-    let output = std::process::Command::new("systemctl")
-        .args(["--user", "disable", "--now", "cosmic-bing-wallpaper.timer"])
-        .output()
+    let output = run_systemctl(&["--user", "disable", "--now", "cosmic-bing-wallpaper.timer"])
         .map_err(|e| format!("Failed to disable timer: {}", e))?;
 
     if !output.status.success() {
         return Err(format!("Failed to disable timer: {}", String::from_utf8_lossy(&output.stderr)));
     }
 
-    let _ = std::process::Command::new("systemctl")
-        .args(["--user", "disable", "cosmic-bing-wallpaper-login.service"])
-        .output();
+    let _ = run_systemctl(&["--user", "disable", "cosmic-bing-wallpaper-login.service"]);
 
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let systemd_dir = home.join(".config/systemd/user");
@@ -543,11 +553,36 @@ fn uninstall_timer() -> Result<(), String> {
     let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper.timer"));
     let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper-login.service"));
 
-    let _ = std::process::Command::new("systemctl")
-        .args(["--user", "daemon-reload"])
-        .output();
+    let _ = run_systemctl(&["--user", "daemon-reload"]);
 
     Ok(())
+}
+
+/// Run a host command, using flatpak-spawn when in Flatpak sandbox
+fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
+    if is_flatpak() {
+        let mut spawn_args = vec!["--host", cmd];
+        spawn_args.extend(args);
+        std::process::Command::new("flatpak-spawn")
+            .args(&spawn_args)
+            .output()
+    } else {
+        std::process::Command::new(cmd)
+            .args(args)
+            .output()
+    }
+}
+
+/// Spawn a host command in background, using flatpak-spawn when in Flatpak sandbox
+fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
+    if is_flatpak() {
+        std::process::Command::new("flatpak-spawn")
+            .args(["--host", cmd])
+            .spawn()
+    } else {
+        std::process::Command::new(cmd)
+            .spawn()
+    }
 }
 
 /// Apply wallpaper to COSMIC desktop
@@ -577,21 +612,17 @@ fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     std::fs::write(&config_path, config_content)
         .map_err(|e| format!("Failed to write config: {}", e))?;
 
-    let _ = std::process::Command::new("pkill")
-        .args(["-x", "cosmic-bg"])
-        .output();
+    // Kill and restart cosmic-bg using host commands in Flatpak
+    let _ = run_host_command("pkill", &["-x", "cosmic-bg"]);
 
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    std::process::Command::new("cosmic-bg")
-        .spawn()
+    spawn_host_command("cosmic-bg")
         .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
 
     std::thread::sleep(std::time::Duration::from_millis(300));
 
-    let check = std::process::Command::new("pgrep")
-        .args(["-x", "cosmic-bg"])
-        .output();
+    let check = run_host_command("pgrep", &["-x", "cosmic-bg"]);
 
     match check {
         Ok(output) if output.status.success() => Ok(()),

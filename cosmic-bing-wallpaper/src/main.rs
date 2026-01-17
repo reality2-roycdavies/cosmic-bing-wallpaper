@@ -42,7 +42,7 @@ mod dbus_client;
 use app::BingWallpaper;
 use cosmic::iced::Size;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::process::Command;
 
 /// Get the path to the tray lockfile
@@ -52,6 +52,14 @@ fn tray_lockfile_path() -> std::path::PathBuf {
         .map(|d| d.join("cosmic-bing-wallpaper"))
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
         .join("tray.lock")
+}
+
+/// Get the path to the GUI lockfile
+fn gui_lockfile_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .map(|d| d.join("cosmic-bing-wallpaper"))
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join("gui.lock")
 }
 
 /// Check if the tray is already running using a lockfile
@@ -88,6 +96,37 @@ pub fn create_tray_lockfile() {
 /// Remove the lockfile when tray exits
 pub fn remove_tray_lockfile() {
     let _ = fs::remove_file(tray_lockfile_path());
+}
+
+/// Check if the GUI is already running
+fn is_gui_running() -> bool {
+    let lockfile = gui_lockfile_path();
+
+    if let Ok(metadata) = fs::metadata(&lockfile) {
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(elapsed) = modified.elapsed() {
+                return elapsed.as_secs() < 60;
+            }
+        }
+        return true;
+    }
+    false
+}
+
+/// Create a lockfile to indicate the GUI is running
+pub fn create_gui_lockfile() {
+    let lockfile = gui_lockfile_path();
+    if let Some(parent) = lockfile.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::File::create(&lockfile) {
+        let _ = write!(file, "{}", std::process::id());
+    }
+}
+
+/// Remove the GUI lockfile when app exits
+pub fn remove_gui_lockfile() {
+    let _ = fs::remove_file(gui_lockfile_path());
 }
 
 /// Application entry point.
@@ -147,6 +186,11 @@ fn main() -> cosmic::iced::Result {
     }
 
     // Default: Smart mode - start tray if not running, then launch GUI
+    if is_gui_running() {
+        println!("Bing Wallpaper is already open.");
+        return Ok(());
+    }
+
     if !is_tray_running() {
         println!("Starting Bing Wallpaper tray in background...");
         if let Err(e) = Command::new(std::env::current_exe().unwrap_or_else(|_| "cosmic-bing-wallpaper".into()))
@@ -159,7 +203,8 @@ fn main() -> cosmic::iced::Result {
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    // Launch GUI
+    // Launch GUI with lockfile management
+    create_gui_lockfile();
     let settings = cosmic::app::Settings::default()
         .size(Size::new(850.0, 750.0))
         .size_limits(
@@ -168,7 +213,9 @@ fn main() -> cosmic::iced::Result {
                 .min_height(550.0)
         );
 
-    cosmic::app::run::<BingWallpaper>(settings, ())
+    let result = cosmic::app::run::<BingWallpaper>(settings, ());
+    remove_gui_lockfile();
+    result
 }
 
 /// Prints help message

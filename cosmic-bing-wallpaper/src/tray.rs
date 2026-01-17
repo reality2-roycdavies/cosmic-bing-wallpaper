@@ -28,6 +28,26 @@ use std::time::Duration;
 use crate::config::Config;
 use crate::dbus_client::WallpaperClient;
 
+/// Check if running inside a Flatpak sandbox
+fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Run systemctl command, using flatpak-spawn when in Flatpak sandbox
+fn run_systemctl(args: &[&str]) -> std::io::Result<std::process::Output> {
+    if is_flatpak() {
+        let mut spawn_args = vec!["--host", "systemctl"];
+        spawn_args.extend(args);
+        Command::new("flatpak-spawn")
+            .args(&spawn_args)
+            .output()
+    } else {
+        Command::new("systemctl")
+            .args(args)
+            .output()
+    }
+}
+
 /// Get the path to COSMIC's theme config file
 fn cosmic_theme_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("cosmic/com.system76.CosmicTheme.Mode/v1/is_dark"))
@@ -68,9 +88,7 @@ fn is_dark_mode() -> bool {
 
 /// Check if the daily timer is enabled (direct systemctl check)
 fn is_timer_enabled_direct() -> bool {
-    Command::new("systemctl")
-        .args(["--user", "is-enabled", "cosmic-bing-wallpaper.timer"])
-        .output()
+    run_systemctl(&["--user", "is-enabled", "cosmic-bing-wallpaper.timer"])
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -121,9 +139,7 @@ fn toggle_timer(enable: bool) {
 
     // Fall back to direct systemctl
     let action = if enable { "enable" } else { "disable" };
-    let _ = Command::new("systemctl")
-        .args(["--user", action, "--now", "cosmic-bing-wallpaper.timer"])
-        .status();
+    let _ = run_systemctl(&["--user", action, "--now", "cosmic-bing-wallpaper.timer"]);
 }
 
 /// Fetch and apply wallpaper, preferring D-Bus if available
@@ -254,9 +270,9 @@ impl Tray for BingWallpaperTray {
     fn title(&self) -> String {
         // Include state in title for accessibility
         if self.timer_enabled {
-            "Bing Wallpaper (Auto-update ON)".to_string()
+            "Bing Wallpaper (Daily Update ON)".to_string()
         } else {
-            "Bing Wallpaper (Auto-update OFF)".to_string()
+            "Bing Wallpaper (Daily Update OFF)".to_string()
         }
     }
 

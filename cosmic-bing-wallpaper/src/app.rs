@@ -44,6 +44,28 @@ use std::path::PathBuf;
 use crate::bing::{BingImage, fetch_bing_image_info, download_image};
 use crate::config::{Config, MARKETS};
 
+/// Check if running inside a Flatpak sandbox
+fn is_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Run systemctl command, using flatpak-spawn when in Flatpak sandbox
+async fn run_systemctl(args: &[&str]) -> std::io::Result<std::process::Output> {
+    if is_flatpak() {
+        let mut spawn_args = vec!["--host", "systemctl"];
+        spawn_args.extend(args);
+        tokio::process::Command::new("flatpak-spawn")
+            .args(&spawn_args)
+            .output()
+            .await
+    } else {
+        tokio::process::Command::new("systemctl")
+            .args(args)
+            .output()
+            .await
+    }
+}
+
 /// Unique application identifier for COSMIC.
 /// Used for window identification and desktop integration.
 pub const APP_ID: &str = "io.github.cosmic-bing-wallpaper";
@@ -426,6 +448,13 @@ impl Application for BingWallpaper {
             }
 
             Message::CheckTimerStatus => {
+                // Refresh GUI lockfile every 30 seconds (every 6 ticks at 5-second intervals)
+                static TICK_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+                let count = TICK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if count % 6 == 0 {
+                    crate::create_gui_lockfile();
+                }
+
                 Task::perform(
                     async { check_timer_status().await },
                     |status| Action::App(Message::TimerStatusChecked(status)),
@@ -438,7 +467,7 @@ impl Application for BingWallpaper {
             }
 
             Message::InstallTimer => {
-                self.status_message = "Installing systemd timer...".to_string();
+                self.status_message = "Enabling Daily Update...".to_string();
                 Task::perform(
                     async { install_timer().await },
                     |result| Action::App(Message::TimerInstalled(result)),
@@ -448,10 +477,10 @@ impl Application for BingWallpaper {
             Message::TimerInstalled(result) => {
                 match result {
                     Ok(()) => {
-                        self.status_message = "Timer installed successfully!".to_string();
+                        self.status_message = "Daily Update enabled!".to_string();
                     }
                     Err(e) => {
-                        self.status_message = format!("Failed to install timer: {}", e);
+                        self.status_message = format!("Failed to enable Daily Update: {}", e);
                     }
                 }
                 // Refresh timer status
@@ -462,7 +491,7 @@ impl Application for BingWallpaper {
             }
 
             Message::UninstallTimer => {
-                self.status_message = "Uninstalling systemd timer...".to_string();
+                self.status_message = "Disabling Daily Update...".to_string();
                 Task::perform(
                     async { uninstall_timer().await },
                     |result| Action::App(Message::TimerUninstalled(result)),
@@ -472,10 +501,10 @@ impl Application for BingWallpaper {
             Message::TimerUninstalled(result) => {
                 match result {
                     Ok(()) => {
-                        self.status_message = "Timer uninstalled.".to_string();
+                        self.status_message = "Daily Update disabled.".to_string();
                     }
                     Err(e) => {
-                        self.status_message = format!("Failed to uninstall timer: {}", e);
+                        self.status_message = format!("Failed to disable Daily Update: {}", e);
                     }
                 }
                 Task::perform(
@@ -600,12 +629,12 @@ impl BingWallpaper {
 
         let timer_button: Element<_> = match &self.timer_status {
             TimerStatus::NotInstalled => {
-                button::suggested("Install Auto-Update Timer")
+                button::suggested("Enable Daily Update")
                     .on_press(Message::InstallTimer)
                     .into()
             }
             TimerStatus::Installed { .. } => {
-                button::destructive("Remove Timer")
+                button::destructive("Disable Daily Update")
                     .on_press(Message::UninstallTimer)
                     .into()
             }
@@ -620,7 +649,7 @@ impl BingWallpaper {
             column()
                 .spacing(8)
                 .align_x(cosmic::iced::Alignment::Center)
-                .push(text::body("Daily Auto-Update"))
+                .push(text::body("Daily Update"))
                 .push(timer_info)
                 .push(timer_button)
         )
@@ -879,10 +908,7 @@ fn scan_history(wallpaper_dir: &str) -> Vec<HistoryItem> {
 /// - `TimerStatus::Error` if systemctl command fails
 async fn check_timer_status() -> TimerStatus {
     // Check if timer is active
-    let output = tokio::process::Command::new("systemctl")
-        .args(["--user", "is-active", "cosmic-bing-wallpaper.timer"])
-        .output()
-        .await;
+    let output = run_systemctl(&["--user", "is-active", "cosmic-bing-wallpaper.timer"]).await;
 
     match output {
         Ok(out) => {
@@ -890,11 +916,8 @@ async fn check_timer_status() -> TimerStatus {
             if status == "active" {
                 // Timer is active - get the next scheduled run time
                 // Use systemctl show with multiple properties to get reliable data
-                let next_output = tokio::process::Command::new("systemctl")
-                    .args(["--user", "show", "cosmic-bing-wallpaper.timer",
-                           "--property=NextElapseUSecRealtime"])
-                    .output()
-                    .await;
+                let next_output = run_systemctl(&["--user", "show", "cosmic-bing-wallpaper.timer",
+                           "--property=NextElapseUSecRealtime"]).await;
 
                 let next_run = match next_output {
                     Ok(out) => {
@@ -941,7 +964,8 @@ async fn check_timer_status() -> TimerStatus {
 /// - `cosmic-bing-wallpaper.timer`: Schedules daily execution at 8:00 AM
 ///
 /// ## Executable Detection
-/// Looks for the executable in this order:
+/// When running in Flatpak, uses `flatpak run` to invoke the app.
+/// Otherwise looks for the executable in this order:
 /// 1. Installed binary at `~/.local/bin/cosmic-bing-wallpaper`
 /// 2. System binary at `/usr/local/bin/cosmic-bing-wallpaper`
 /// 3. Shell script at `~/.local/share/cosmic-bing-wallpaper/bing-wallpaper.sh`
@@ -966,40 +990,46 @@ async fn install_timer() -> Result<(), String> {
     std::fs::create_dir_all(&systemd_dir)
         .map_err(|e| format!("Failed to create systemd directory: {}", e))?;
 
-    // Look for the executable in standard locations
-    let local_bin = home.join(".local/bin/cosmic-bing-wallpaper");
-    let system_bin = std::path::Path::new("/usr/local/bin/cosmic-bing-wallpaper");
-    let local_script = home.join(".local/share/cosmic-bing-wallpaper/bing-wallpaper.sh");
-
-    let exec_path = if local_bin.exists() {
-        // Prefer installed binary in user's local bin
-        format!("{} --fetch-and-apply", local_bin.display())
-    } else if system_bin.exists() {
-        // Fall back to system-wide installation
-        format!("{} --fetch-and-apply", system_bin.display())
+    // Determine the executable path based on environment
+    let exec_path = if is_flatpak() {
+        // In Flatpak, use flatpak run to invoke the app
+        "flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --fetch-and-apply".to_string()
     } else {
-        // Fall back to shell script
-        // If running from AppImage, copy the bundled script first
-        if let Ok(appimage_script) = std::env::var("BING_WALLPAPER_SCRIPT") {
-            if let Some(parent) = local_script.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create script directory: {}", e))?;
-            }
-            std::fs::copy(&appimage_script, &local_script)
-                .map_err(|e| format!("Failed to copy script: {}", e))?;
-            // Make it executable
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&local_script, std::fs::Permissions::from_mode(0o755))
-                    .map_err(|e| format!("Failed to set script permissions: {}", e))?;
-            }
-        }
+        // Look for the executable in standard locations
+        let local_bin = home.join(".local/bin/cosmic-bing-wallpaper");
+        let system_bin = std::path::Path::new("/usr/local/bin/cosmic-bing-wallpaper");
+        let local_script = home.join(".local/share/cosmic-bing-wallpaper/bing-wallpaper.sh");
 
-        if local_script.exists() {
-            local_script.to_string_lossy().to_string()
+        if local_bin.exists() {
+            // Prefer installed binary in user's local bin
+            format!("{} --fetch-and-apply", local_bin.display())
+        } else if system_bin.exists() {
+            // Fall back to system-wide installation
+            format!("{} --fetch-and-apply", system_bin.display())
         } else {
-            return Err("No executable found. Please install the app first using ./install.sh".to_string());
+            // Fall back to shell script
+            // If running from AppImage, copy the bundled script first
+            if let Ok(appimage_script) = std::env::var("BING_WALLPAPER_SCRIPT") {
+                if let Some(parent) = local_script.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| format!("Failed to create script directory: {}", e))?;
+                }
+                std::fs::copy(&appimage_script, &local_script)
+                    .map_err(|e| format!("Failed to copy script: {}", e))?;
+                // Make it executable
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&local_script, std::fs::Permissions::from_mode(0o755))
+                        .map_err(|e| format!("Failed to set script permissions: {}", e))?;
+                }
+            }
+
+            if local_script.exists() {
+                local_script.to_string_lossy().to_string()
+            } else {
+                return Err("No executable found. Please install the app first using ./install.sh".to_string());
+            }
         }
     };
 
@@ -1064,10 +1094,7 @@ WantedBy=graphical-session.target
         .map_err(|e| format!("Failed to write login service file: {}", e))?;
 
     // Reload and enable
-    let reload = tokio::process::Command::new("systemctl")
-        .args(["--user", "daemon-reload"])
-        .output()
-        .await
+    let reload = run_systemctl(&["--user", "daemon-reload"]).await
         .map_err(|e| format!("Failed to reload systemd: {}", e))?;
 
     if !reload.status.success() {
@@ -1075,10 +1102,7 @@ WantedBy=graphical-session.target
     }
 
     // Enable timer
-    let enable_timer = tokio::process::Command::new("systemctl")
-        .args(["--user", "enable", "--now", "cosmic-bing-wallpaper.timer"])
-        .output()
-        .await
+    let enable_timer = run_systemctl(&["--user", "enable", "--now", "cosmic-bing-wallpaper.timer"]).await
         .map_err(|e| format!("Failed to enable timer: {}", e))?;
 
     if !enable_timer.status.success() {
@@ -1086,10 +1110,7 @@ WantedBy=graphical-session.target
     }
 
     // Enable login service
-    let enable_login = tokio::process::Command::new("systemctl")
-        .args(["--user", "enable", "cosmic-bing-wallpaper-login.service"])
-        .output()
-        .await
+    let enable_login = run_systemctl(&["--user", "enable", "cosmic-bing-wallpaper-login.service"]).await
         .map_err(|e| format!("Failed to enable login service: {}", e))?;
 
     if !enable_login.status.success() {
@@ -1109,10 +1130,7 @@ WantedBy=graphical-session.target
 /// are silently ignored (files may not exist).
 async fn uninstall_timer() -> Result<(), String> {
     // Disable and stop the timer
-    let output = tokio::process::Command::new("systemctl")
-        .args(["--user", "disable", "--now", "cosmic-bing-wallpaper.timer"])
-        .output()
-        .await
+    let output = run_systemctl(&["--user", "disable", "--now", "cosmic-bing-wallpaper.timer"]).await
         .map_err(|e| format!("Failed to disable timer: {}", e))?;
 
     if !output.status.success() {
@@ -1120,10 +1138,7 @@ async fn uninstall_timer() -> Result<(), String> {
     }
 
     // Disable login service (ignore errors - may not exist)
-    let _ = tokio::process::Command::new("systemctl")
-        .args(["--user", "disable", "cosmic-bing-wallpaper-login.service"])
-        .output()
-        .await;
+    let _ = run_systemctl(&["--user", "disable", "cosmic-bing-wallpaper-login.service"]).await;
 
     // Clean up unit files (errors ignored - files may not exist)
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
@@ -1134,10 +1149,7 @@ async fn uninstall_timer() -> Result<(), String> {
     let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper-login.service"));
 
     // Reload daemon to pick up the removal
-    let _ = tokio::process::Command::new("systemctl")
-        .args(["--user", "daemon-reload"])
-        .output()
-        .await;
+    let _ = run_systemctl(&["--user", "daemon-reload"]).await;
 
     Ok(())
 }
@@ -1170,6 +1182,35 @@ async fn uninstall_timer() -> Result<(), String> {
 /// # Errors
 /// Returns error if config directory cannot be determined, directory creation
 /// fails, file write fails, or cosmic-bg cannot be started.
+/// Run a host command, using flatpak-spawn when in Flatpak sandbox
+async fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
+    if is_flatpak() {
+        let mut spawn_args = vec!["--host", cmd];
+        spawn_args.extend(args);
+        tokio::process::Command::new("flatpak-spawn")
+            .args(&spawn_args)
+            .output()
+            .await
+    } else {
+        tokio::process::Command::new(cmd)
+            .args(args)
+            .output()
+            .await
+    }
+}
+
+/// Spawn a host command in background, using flatpak-spawn when in Flatpak sandbox
+async fn spawn_host_command(cmd: &str) -> std::io::Result<tokio::process::Child> {
+    if is_flatpak() {
+        tokio::process::Command::new("flatpak-spawn")
+            .args(["--host", cmd])
+            .spawn()
+    } else {
+        tokio::process::Command::new(cmd)
+            .spawn()
+    }
+}
+
 async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     // Determine config path for COSMIC background
     let config_path = dirs::config_dir()
@@ -1200,27 +1241,20 @@ async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     std::fs::write(&config_path, config_content)
         .map_err(|e| format!("Failed to write config: {}", e))?;
 
-    // Kill cosmic-bg to force config reload
-    let _ = tokio::process::Command::new("pkill")
-        .args(["-x", "cosmic-bg"])
-        .output()
-        .await;
+    // Kill cosmic-bg to force config reload (use host command in Flatpak)
+    let _ = run_host_command("pkill", &["-x", "cosmic-bg"]).await;
 
     // Wait for process to fully terminate
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // Always restart cosmic-bg to ensure the new wallpaper is loaded
-    tokio::process::Command::new("cosmic-bg")
-        .spawn()
+    spawn_host_command("cosmic-bg").await
         .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
 
     // Wait a moment and verify cosmic-bg is running
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
-    let check = tokio::process::Command::new("pgrep")
-        .args(["-x", "cosmic-bg"])
-        .output()
-        .await;
+    let check = run_host_command("pgrep", &["-x", "cosmic-bg"]).await;
 
     match check {
         Ok(output) if output.status.success() => Ok(()),

@@ -45,5 +45,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-        tag: v0.2.3
+        tag: v0.2.4
       - cargo-sources.json
