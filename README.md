@@ -100,7 +100,7 @@ After completion, we analysed what worked and what could have been better:
 
 **Key insight for future projects:** Earlier and more frequent code reviews, upfront platform research, and explicit prompts for "what could go wrong?" would have made the process smoother.
 
-*See [RETROSPECTIVE.md](RETROSPECTIVE.md) for the complete analysis.*
+*See [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) for the complete analysis.*
 
 ### What the Thematic Analysis Revealed
 
@@ -130,21 +130,21 @@ The emerging model of AI-assisted development:
 
 The human becomes an **editor, tester, and director**—roles that require understanding *what* software should do, even without knowing *how* to implement it.
 
-*See [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) for the complete analysis.*
+*See [docs/THEMATIC-ANALYSIS.md](docs/THEMATIC-ANALYSIS.md) for the complete analysis.*
 
 ### Educational Resources
 
 | Resource | Description |
 |----------|-------------|
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Technical journey from concept to release |
-| [THEMATIC-ANALYSIS.md](THEMATIC-ANALYSIS.md) | 16 themes identified in AI-human collaboration patterns |
-| [RETROSPECTIVE.md](RETROSPECTIVE.md) | What worked, what didn't, and lessons for future projects |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Technical journey from concept to release |
+| [docs/THEMATIC-ANALYSIS.md](docs/THEMATIC-ANALYSIS.md) | 16 themes identified in AI-human collaboration patterns |
+| [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) | What worked, what didn't, and lessons for future projects |
 | **Conversation Transcripts** | |
-| [Part 1: Creation](transcripts/CONVERSATION-PART1-CREATION.md) | Initial development from shell script to GUI application |
-| [Part 2: Refinement](transcripts/CONVERSATION-PART2-REFINEMENT.md) | Bug fixes, system tray, systemd integration, packaging |
-| [Part 3: Code Review](transcripts/CONVERSATION-PART3-CODE-REVIEW.md) | Edge case analysis and 13 fixes |
-| [Part 4: Architecture & Polish](transcripts/CONVERSATION-PART4-ARCHITECTURE.md) | D-Bus daemon refactoring, theme-aware icons, colored indicators |
-| [Raw transcripts](transcripts/) | JSONL files for programmatic analysis |
+| [Part 1: Creation](docs/transcripts/CONVERSATION-PART1-CREATION.md) | Initial development from shell script to GUI application |
+| [Part 2: Refinement](docs/transcripts/CONVERSATION-PART2-REFINEMENT.md) | Bug fixes, system tray, systemd integration, packaging |
+| [Part 3: Code Review](docs/transcripts/CONVERSATION-PART3-CODE-REVIEW.md) | Edge case analysis and 13 fixes |
+| [Part 4: Architecture & Polish](docs/transcripts/CONVERSATION-PART4-ARCHITECTURE.md) | D-Bus daemon refactoring, theme-aware icons, colored indicators |
+| [Raw transcripts](docs/transcripts/) | JSONL files for programmatic analysis |
 
 ---
 

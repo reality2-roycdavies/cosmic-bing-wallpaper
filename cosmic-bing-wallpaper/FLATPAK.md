@@ -18,8 +18,8 @@ This document describes how to build and publish cosmic-bing-wallpaper as a Flat
 
 2. Install the Flatpak SDK:
    ```bash
-   flatpak install flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-   flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
+   flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+   flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
    ```
 
 ## Generating cargo-sources.json
@@ -48,21 +48,21 @@ The Flatpak build requires a `cargo-sources.json` file that lists all Cargo depe
 
 ```bash
 cd /path/to/cosmic-bing-wallpaper
-flatpak-builder --force-clean build-dir io.github.cosmic-bing-wallpaper.yml
+flatpak-builder --force-clean build-dir io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
 ```
 
 ## Testing Locally
 
 ```bash
-flatpak-builder --user --install --force-clean build-dir io.github.cosmic-bing-wallpaper.yml
-flatpak run io.github.cosmic-bing-wallpaper
+flatpak-builder --user --install --force-clean build-dir io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
+flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper
 ```
 
 ## Publishing to Flathub
 
 1. Fork https://github.com/flathub/flathub
 2. Create a new branch named `new-pr`
-3. Add your manifest as `io.github.cosmic-bing-wallpaper.yml`
+3. Add your manifest as `io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml`
 4. Submit a pull request
 5. Follow the Flathub review process
 
@@ -75,7 +75,7 @@ See https://github.com/flathub/flathub/wiki/App-Submission for detailed instruct
 - The Flatpak has permissions to:
   - Access Wayland/X11 display
   - Access the network (to fetch Bing images)
-  - Access the system tray via StatusNotifierItem
+  - Access the system tray via StatusNotifierItem (D-Bus session bus)
   - Read/write COSMIC configuration (for wallpaper settings)
   - Store app configuration and wallpapers
-  - Control systemd user services (for timer)
+  - Create autostart entry in `~/.config/autostart`

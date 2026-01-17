@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-18
+
+### Changed
+
+- **Flatpak-Ready Architecture**: Major refactoring for Flatpak sandbox compatibility
+  - Merged daemon functionality into tray process (no more separate daemon)
+  - Replaced systemd timer with internal timer implementation
+  - Added XDG autostart entry creation on first run
+  - Removed all systemd service dependencies
+
+- **Tray Menu Simplification**:
+  - Renamed "Open Application" to "Settings ..."
+  - Removed "Open Wallpaper Folder" (not useful in sandbox)
+
+- **ksni 0.3 Compatibility**: Updated for Flatpak PID namespace handling
+  - Uses `disable_dbus_name()` for unique D-Bus names in sandbox
+
+### Removed
+
+- Systemd user services (`cosmic-bing-wallpaper-daemon.service`, etc.)
+- Separate daemon process
+- "Open Folder" button from history view
+
+---
+
 ## [0.1.5] - 2026-01-17
 
 ### Changed
