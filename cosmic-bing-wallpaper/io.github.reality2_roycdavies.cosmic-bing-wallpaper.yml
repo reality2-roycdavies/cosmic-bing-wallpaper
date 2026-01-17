@@ -21,8 +21,9 @@ finish-args:
   # App config and wallpaper storage
   - --filesystem=~/.config/cosmic-bing-wallpaper:create
   - --filesystem=~/Pictures/bing-wallpapers:create
-  # Systemd user service control for daily wallpaper timer
+  # Systemd user service/timer files for daily wallpaper updates
   # Exception requested: app manages its own systemd user timer
+  - --filesystem=~/.config/systemd/user:create
   - --talk-name=org.freedesktop.systemd1
 
 modules:
