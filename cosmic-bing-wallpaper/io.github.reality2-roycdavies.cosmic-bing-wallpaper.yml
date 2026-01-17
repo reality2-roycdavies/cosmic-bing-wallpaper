@@ -1,6 +1,6 @@
-app-id: io.github.cosmic-bing-wallpaper
+app-id: io.github.reality2-roycdavies.cosmic-bing-wallpaper
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -37,14 +37,12 @@ modules:
       - cargo --offline fetch --manifest-path Cargo.toml --verbose
       - cargo --offline build --release --verbose
       - install -Dm755 target/release/cosmic-bing-wallpaper /app/bin/cosmic-bing-wallpaper
-      - install -Dm644 resources/io.github.cosmic-bing-wallpaper.desktop /app/share/applications/io.github.cosmic-bing-wallpaper.desktop
-      - install -Dm644 resources/io.github.cosmic-bing-wallpaper.metainfo.xml /app/share/metainfo/io.github.cosmic-bing-wallpaper.metainfo.xml
-      - install -Dm644 resources/io.github.cosmic-bing-wallpaper.svg /app/share/icons/hicolor/scalable/apps/io.github.cosmic-bing-wallpaper.svg
-      - install -Dm644 resources/io.github.cosmic-bing-wallpaper-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.cosmic-bing-wallpaper-symbolic.svg
+      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper.desktop /app/share/applications/io.github.reality2-roycdavies.cosmic-bing-wallpaper.desktop
+      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper.metainfo.xml /app/share/metainfo/io.github.reality2-roycdavies.cosmic-bing-wallpaper.metainfo.xml
+      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper.svg /app/share/icons/hicolor/scalable/apps/io.github.reality2-roycdavies.cosmic-bing-wallpaper.svg
+      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2-roycdavies.cosmic-bing-wallpaper-symbolic.svg
     sources:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-        tag: v0.2.0
-      # Cargo sources will be generated with flatpak-cargo-generator
-      # python3 flatpak-cargo-generator.py Cargo.lock -o cargo-sources.json
+        tag: v0.2.1
       - cargo-sources.json
