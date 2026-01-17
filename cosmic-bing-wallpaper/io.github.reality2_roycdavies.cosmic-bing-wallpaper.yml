@@ -1,4 +1,4 @@
-app-id: io.github.reality2-roycdavies.cosmic-bing-wallpaper
+app-id: io.github.reality2_roycdavies.cosmic-bing-wallpaper
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
@@ -17,13 +17,15 @@ finish-args:
   - --talk-name=org.kde.StatusNotifierWatcher
   - --talk-name=org.freedesktop.StatusNotifierWatcher
   # D-Bus for daemon communication
+  # Exception requested: daemon uses org.cosmicbing.Wallpaper1 for IPC
   - --own-name=org.cosmicbing.Wallpaper1
   # Read COSMIC theme and background config
   - --filesystem=~/.config/cosmic:rw
   # App config and wallpaper storage
   - --filesystem=~/.config/cosmic-bing-wallpaper:create
   - --filesystem=~/Pictures/bing-wallpapers:create
-  # Systemd user service control
+  # Systemd user service control for daily wallpaper timer
+  # Exception requested: app manages its own systemd user timer
   - --talk-name=org.freedesktop.systemd1
 
 modules:
@@ -37,12 +39,12 @@ modules:
       - cargo --offline fetch --manifest-path Cargo.toml --verbose
       - cargo --offline build --release --verbose
       - install -Dm755 target/release/cosmic-bing-wallpaper /app/bin/cosmic-bing-wallpaper
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper.desktop /app/share/applications/io.github.reality2-roycdavies.cosmic-bing-wallpaper.desktop
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper.metainfo.xml /app/share/metainfo/io.github.reality2-roycdavies.cosmic-bing-wallpaper.metainfo.xml
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper.svg /app/share/icons/hicolor/scalable/apps/io.github.reality2-roycdavies.cosmic-bing-wallpaper.svg
-      - install -Dm644 resources/io.github.reality2-roycdavies.cosmic-bing-wallpaper-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2-roycdavies.cosmic-bing-wallpaper-symbolic.svg
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop /app/share/applications/io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper.metainfo.xml /app/share/metainfo/io.github.reality2_roycdavies.cosmic-bing-wallpaper.metainfo.xml
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg /app/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg
+      - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg
     sources:
       - type: git
         url: https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-        tag: v0.2.1
+        tag: v0.2.2
       - cargo-sources.json

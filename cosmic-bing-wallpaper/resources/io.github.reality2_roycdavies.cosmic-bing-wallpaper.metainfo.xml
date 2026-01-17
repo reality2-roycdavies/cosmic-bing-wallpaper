@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.reality2-roycdavies.cosmic-bing-wallpaper</id>
+  <id>io.github.reality2_roycdavies.cosmic-bing-wallpaper</id>
   <name>Bing Wallpaper</name>
   <summary>Bing Daily Wallpaper for COSMIC Desktop</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MPL-2.0</project_license>
-  <developer id="io.github.reality2-roycdavies">
+  <developer id="io.github.reality2_roycdavies">
     <name>Roy C. Davies</name>
   </developer>
 
@@ -46,7 +46,7 @@
   <url type="bugtracker">https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/issues</url>
   <url type="vcs-browser">https://github.com/reality2-roycdavies/cosmic-bing-wallpaper</url>
 
-  <launchable type="desktop-id">io.github.reality2-roycdavies.cosmic-bing-wallpaper.desktop</launchable>
+  <launchable type="desktop-id">io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop</launchable>
 
   <provides>
     <binary>cosmic-bing-wallpaper</binary>
@@ -60,6 +60,14 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.2.2" date="2026-01-17">
+      <description>
+        <p>Flatpak naming fix:</p>
+        <ul>
+          <li>Fixed app ID to use underscore in username (Flatpak requirement)</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-01-17">
       <description>
         <p>Flathub compliance update:</p>
