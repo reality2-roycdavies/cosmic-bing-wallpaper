@@ -31,6 +31,7 @@ finish-args:
 modules:
   - name: cosmic-bing-wallpaper
     buildsystem: simple
+    subdir: cosmic-bing-wallpaper
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
       env:
