@@ -283,7 +283,7 @@ This suggests AI-assisted development could significantly expand who can create 
 
 | Aspect | Assessment |
 |--------|------------|
-| **Speed** | Excellent — 6 hours for full app |
+| **Speed** | Excellent — 8 hours for full app (+4 hours Flatpak refactoring) |
 | **Code quality (initial)** | Good but not great — worked but had edge cases |
 | **Code quality (after review)** | Much better — 13 issues addressed |
 | **Documentation** | Excellent — comprehensive and honest |
@@ -297,7 +297,7 @@ This suggests AI-assisted development could significantly expand who can create 
 - Explicit quality prompts
 - Structured feedback
 
-The project demonstrates both the power and the limitations of AI-assisted development. The productivity gain is real (50-100x for this type of project), but the human's role as tester, questioner, and quality judge remains essential.
+The project demonstrates both the power and the limitations of AI-assisted development. The productivity gain is real (30-50x for this type of project, including later refactoring), but the human's role as tester, questioner, and quality judge remains essential.
 
 ---
 
@@ -372,11 +372,11 @@ A fourth session addressed component synchronization and visual polish. New insi
 
 | Aspect | Assessment |
 |--------|------------|
-| **Speed** | Excellent — ~8 hours total across 4 sessions |
+| **Speed** | Excellent — ~8 hours across 4 sessions (+4 hours Flatpak refactoring) |
 | **Code quality (initial)** | Good but not great — worked but had edge cases |
 | **Code quality (after review)** | Much better — 13+ issues addressed |
 | **Architecture (initial)** | Monolithic — worked but had sync issues |
-| **Architecture (final)** | Daemon+clients — clean separation, instant sync |
+| **Architecture (final)** | Embedded service — Flatpak-compatible, no systemd |
 | **Documentation** | Comprehensive — 4 transcripts, thematic analysis |
 | **Platform fit** | Required iteration — COSMIC specifics learned the hard way |
 | **Visual polish** | Required iteration — 6 attempts for icon updates |

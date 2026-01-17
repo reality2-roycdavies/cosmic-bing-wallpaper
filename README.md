@@ -14,7 +14,7 @@ A daily Bing wallpaper manager for the [COSMIC desktop environment](https://syst
 
 > **This project is an educational showcase of AI-assisted software development.**
 
-This application was created collaboratively by [Dr. Roy C. Davies](https://roycdavies.github.io) and [Claude](https://claude.ai) (Anthropic's AI) using [Claude Code](https://claude.ai/code). From initial idea to fully functional released application—complete with GUI, system tray, systemd integration, and AppImage packaging—in approximately **6 hours of active work** spread across two sessions.
+This application was created collaboratively by [Dr. Roy C. Davies](https://roycdavies.github.io) and [Claude](https://claude.ai) (Anthropic's AI) using [Claude Code](https://claude.ai/code). From initial idea to fully functional released application—complete with GUI, system tray, and AppImage packaging—in approximately **8 hours of active work** spread across four sessions. An additional **~4 hours** were later spent refactoring for Flatpak compatibility (see [FLATPAK-JOURNEY.md](docs/FLATPAK-JOURNEY.md)).
 
 **The experiment:** The rule was that the human would write *no code at all*—not even comments, not even git commands. Every line of code, every commit, every file edit was performed by Claude. The human's role was purely to direct, question, test, and decide.
 
@@ -84,7 +84,7 @@ For a developer new to Rust:
 - Plus all the above: **4-6 weeks**
 - **Total estimate: 6-10 weeks**
 
-With AI assistance, the same scope was completed in **~6 hours of active work**—a productivity multiplier of roughly **50-100x** for this type of project.
+With AI assistance, the initial scope was completed in **~8 hours of active work**, plus **~4 hours** for Flatpak refactoring—a productivity multiplier of roughly **30-50x** for this type of project.
 
 ### Lessons Learned (Retrospective)
 

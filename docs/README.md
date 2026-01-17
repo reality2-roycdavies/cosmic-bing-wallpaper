@@ -4,7 +4,7 @@ This directory contains documentation about the development process of cosmic-bi
 
 ## About This Project
 
-cosmic-bing-wallpaper was developed collaboratively between **Dr. Roy C. Davies** and **Claude** (Anthropic's AI assistant) using [Claude Code](https://claude.ai/claude-code). The entire application—from initial concept to full-featured release—was built through natural language conversation across multiple sessions totaling approximately **8 hours**.
+cosmic-bing-wallpaper was developed collaboratively between **Dr. Roy C. Davies** and **Claude** (Anthropic's AI assistant) using [Claude Code](https://claude.ai/claude-code). The entire application—from initial concept to full-featured release—was built through natural language conversation across multiple sessions totaling approximately **8 hours**. An additional **~4 hours** were later spent refactoring for Flatpak/Flathub distribution.
 
 This is the first project developed using this approach, followed by [cosmic-runkat](https://github.com/reality2-roycdavies/cosmic-runkat). Both projects serve as case studies in human-AI collaboration for software development.
 
