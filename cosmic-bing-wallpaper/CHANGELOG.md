@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-01-18
+## [0.3.1] - 2026-01-18
+
+### Fixed
+
+- **Flatpak Path Detection**: Fixed COSMIC theme detection in Flatpak
+  - Now correctly reads from host's ~/.config/cosmic instead of sandboxed config
+  - Fixes theme-aware icons not updating in Flatpak
+
+- **Theme Detection**: Added periodic polling fallback for theme changes
+  - Theme updates now happen within ~1 second instead of relying only on inotify
+
+- **Quit/Restart Reliability**: Improved cleanup when quitting from tray menu
+  - Added delay to ensure D-Bus resources are properly released
+  - Lockfile now removed inside tray cleanup (not just in main)
+  - Fixes issue where app wouldn't restart after quitting
+
+---
+
+## [0.3.0] - 2026-01-18
 
 ### Changed
 
@@ -22,11 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ksni 0.3 Compatibility**: Updated for Flatpak PID namespace handling
   - Uses `disable_dbus_name()` for unique D-Bus names in sandbox
 
+- **Install Script Updates**:
+  - Fixed APP_ID to `io.github.reality2_roycdavies.cosmic-bing-wallpaper`
+  - Updated install.sh to use XDG autostart instead of D-Bus service
+  - Updated install-appimage.sh to use XDG autostart instead of systemd
+
 ### Removed
 
 - Systemd user services (`cosmic-bing-wallpaper-daemon.service`, etc.)
 - Separate daemon process
 - "Open Folder" button from history view
+- 25 unused tray icon variants (kept only 4 24px icons)
 
 ---
 

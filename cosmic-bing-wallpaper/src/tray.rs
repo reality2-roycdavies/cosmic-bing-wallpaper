@@ -29,9 +29,17 @@ use zbus::connection;
 use crate::service::{ServiceState, WallpaperService, SERVICE_NAME, OBJECT_PATH};
 use crate::timer::InternalTimer;
 
+/// Get the host's COSMIC config directory
+/// In Flatpak, dirs::config_dir() returns the sandboxed config, not the host's
+fn host_cosmic_config_dir() -> Option<PathBuf> {
+    // Always use home directory + .config to get host's config
+    // This works both in Flatpak (with filesystem access) and native
+    dirs::home_dir().map(|h| h.join(".config/cosmic"))
+}
+
 /// Get the path to COSMIC's theme config file
 fn cosmic_theme_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("cosmic/com.system76.CosmicTheme.Mode/v1/is_dark"))
+    host_cosmic_config_dir().map(|d| d.join("com.system76.CosmicTheme.Mode/v1/is_dark"))
 }
 
 /// Detect if the system is in dark mode
@@ -447,10 +455,17 @@ async fn run_tray_async() -> Result<(), String> {
             }
         }
 
-        // Check for theme file changes (non-blocking)
-        if theme_rx.try_recv().is_ok() {
+        // Check for theme file changes (non-blocking via watcher)
+        // Also poll periodically as fallback since inotify isn't always reliable
+        static THEME_CHECK_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let theme_counter = THEME_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let theme_changed = theme_rx.try_recv().is_ok() || theme_counter % 20 == 0; // Check every ~1 second
+        if theme_changed {
+            let new_dark_mode = is_dark_mode();
             handle.update(|tray| {
-                tray.dark_mode = is_dark_mode();
+                if tray.dark_mode != new_dark_mode {
+                    tray.dark_mode = new_dark_mode;
+                }
             }).await;
         }
 
@@ -486,7 +501,18 @@ async fn run_tray_async() -> Result<(), String> {
     // Cleanup
     timer_handle.abort();
     handle.shutdown();
+
+    // Explicitly drop the D-Bus connection to release the well-known name
+    // This needs to happen before we exit the async block so the release
+    // message is actually sent
     drop(dbus_conn);
+
+    // Small delay to ensure D-Bus has time to process the name release
+    // Without this, the name might still appear "owned" briefly after exit
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Clean up lockfile on exit
+    crate::remove_tray_lockfile();
 
     Ok(())
 }
