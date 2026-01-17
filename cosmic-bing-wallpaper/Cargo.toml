@@ -36,11 +36,8 @@ dirs = "6"
 # Date/time handling
 chrono = "0.4"
 
-# Open URLs/files
-open = "5"
-
 # System tray (StatusNotifierItem protocol)
-ksni = "0.2"
+ksni = "0.3"
 image = "0.24"
 
 # D-Bus IPC for daemon/client communication

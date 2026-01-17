@@ -13,23 +13,20 @@ finish-args:
   - --socket=wayland
   # Network access for Bing API
   - --share=network
-  # System tray and D-Bus daemon communication
-  # Exception requested: StatusNotifierItem and daemon IPC require session bus
+  # System tray and D-Bus service communication
+  # Exception requested: StatusNotifierItem and GUI-tray IPC require session bus
   - --socket=session-bus
   # Read COSMIC theme and background config
   - --filesystem=~/.config/cosmic:rw
-  # App config and wallpaper storage
+  # App config, timer state, and wallpaper storage
   - --filesystem=~/.config/cosmic-bing-wallpaper:create
   - --filesystem=~/Pictures/bing-wallpapers:create
-  # Systemd user service/timer files for daily wallpaper updates
-  # Exception requested: app manages its own systemd user timer
-  - --filesystem=~/.config/systemd/user:create
-  - --talk-name=org.freedesktop.systemd1
+  # Autostart entry
+  - --filesystem=~/.config/autostart:create
 
 modules:
   - name: cosmic-bing-wallpaper
     buildsystem: simple
-    subdir: cosmic-bing-wallpaper
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
       env:
@@ -43,7 +40,6 @@ modules:
       - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg /app/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg
       - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg
     sources:
-      - type: git
-        url: https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-        tag: v0.2.4
+      - type: dir
+        path: .
       - cargo-sources.json

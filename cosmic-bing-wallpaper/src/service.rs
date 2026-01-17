@@ -1,7 +1,7 @@
-//! # D-Bus Daemon Module
+//! # Wallpaper Service Module
 //!
-//! Implements a background D-Bus service that provides the core wallpaper functionality.
-//! Both the GUI application and system tray act as clients to this daemon.
+//! Implements the core wallpaper functionality as a D-Bus service.
+//! This service is embedded in the tray process for Flatpak compatibility.
 //!
 //! ## D-Bus Interface
 //!
@@ -25,29 +25,15 @@
 use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use zbus::{connection, interface, SignalContext};
+use zbus::{interface, SignalContext};
 
 use crate::bing::{self, BingImage};
 use crate::config::Config;
+use crate::timer::InternalTimer;
 
 /// Check if running inside a Flatpak sandbox
-fn is_flatpak() -> bool {
+pub fn is_flatpak() -> bool {
     std::path::Path::new("/.flatpak-info").exists()
-}
-
-/// Run systemctl command, using flatpak-spawn when in Flatpak sandbox
-fn run_systemctl(args: &[&str]) -> std::io::Result<std::process::Output> {
-    if is_flatpak() {
-        let mut spawn_args = vec!["--host", "systemctl"];
-        spawn_args.extend(args);
-        std::process::Command::new("flatpak-spawn")
-            .args(&spawn_args)
-            .output()
-    } else {
-        std::process::Command::new("systemctl")
-            .args(args)
-            .output()
-    }
 }
 
 /// Helper to run async code that requires tokio runtime (like reqwest)
@@ -77,33 +63,36 @@ pub struct WallpaperInfo {
     pub date: String,
 }
 
-/// Shared daemon state
-pub struct DaemonState {
+/// Shared service state
+pub struct ServiceState {
     /// User configuration
     pub config: Config,
     /// Currently fetched image info
     pub current_image: Option<BingImage>,
     /// Path to current image
     pub current_path: Option<String>,
+    /// Internal timer reference (shared with tray)
+    pub timer: Arc<InternalTimer>,
 }
 
-impl DaemonState {
-    pub fn new() -> Self {
+impl ServiceState {
+    pub fn new(timer: Arc<InternalTimer>) -> Self {
         Self {
             config: Config::load(),
             current_image: None,
             current_path: None,
+            timer,
         }
     }
 }
 
 /// The D-Bus interface implementation
 pub struct WallpaperService {
-    state: Arc<RwLock<DaemonState>>,
+    state: Arc<RwLock<ServiceState>>,
 }
 
 impl WallpaperService {
-    pub fn new(state: Arc<RwLock<DaemonState>>) -> Self {
+    pub fn new(state: Arc<RwLock<ServiceState>>) -> Self {
         Self { state }
     }
 }
@@ -163,6 +152,12 @@ impl WallpaperService {
 
             // Emit wallpaper changed signal
             Self::wallpaper_changed(&ctx, &path, &image.title).await?;
+        }
+
+        // Record successful fetch for timer catch-up logic
+        {
+            let state = self.state.read().await;
+            state.timer.record_fetch();
         }
 
         Self::fetch_progress(&ctx, "complete", "Done!").await?;
@@ -235,7 +230,8 @@ impl WallpaperService {
 
     /// Check if auto-update timer is enabled
     async fn get_timer_enabled(&self) -> bool {
-        is_timer_enabled()
+        let state = self.state.read().await;
+        state.timer.is_enabled()
     }
 
     /// Enable or disable the auto-update timer
@@ -244,20 +240,19 @@ impl WallpaperService {
         enabled: bool,
         #[zbus(signal_context)] ctx: SignalContext<'_>,
     ) -> zbus::fdo::Result<()> {
-        let result = if enabled {
-            install_timer()
-        } else {
-            uninstall_timer()
-        };
+        {
+            let state = self.state.read().await;
+            state.timer.set_enabled(enabled);
+        }
 
-        result.map_err(|e| zbus::fdo::Error::Failed(e))?;
         Self::timer_state_changed(&ctx, enabled).await?;
         Ok(())
     }
 
-    /// Get the next scheduled timer run (empty string if not installed)
+    /// Get the next scheduled timer run (empty string if not enabled)
     async fn get_timer_next_run(&self) -> String {
-        get_timer_next_run()
+        let state = self.state.read().await;
+        state.timer.next_run_string().await
     }
 
     /// Get list of downloaded wallpapers
@@ -383,181 +378,6 @@ fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
     deleted
 }
 
-/// Check if the systemd timer is enabled
-fn is_timer_enabled() -> bool {
-    run_systemctl(&["--user", "is-enabled", "cosmic-bing-wallpaper.timer"])
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-/// Get the next scheduled timer run time
-fn get_timer_next_run() -> String {
-    let output = run_systemctl(&["--user", "is-active", "cosmic-bing-wallpaper.timer"]);
-
-    match output {
-        Ok(out) if String::from_utf8_lossy(&out.stdout).trim() == "active" => {
-            let next_output = run_systemctl(&["--user", "show", "cosmic-bing-wallpaper.timer",
-                       "--property=NextElapseUSecRealtime"]);
-
-            match next_output {
-                Ok(out) => {
-                    let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    let timestamp = raw.strip_prefix("NextElapseUSecRealtime=").unwrap_or(&raw);
-
-                    if timestamp.is_empty() || timestamp == "n/a" {
-                        "Scheduled".to_string()
-                    } else if let Ok(usecs) = timestamp.parse::<u64>() {
-                        let secs = usecs / 1_000_000;
-                        if let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
-                            let local: chrono::DateTime<chrono::Local> = dt.into();
-                            local.format("%a %b %d %H:%M").to_string()
-                        } else {
-                            "Scheduled".to_string()
-                        }
-                    } else {
-                        timestamp.to_string()
-                    }
-                }
-                Err(_) => "Scheduled".to_string()
-            }
-        }
-        _ => String::new()
-    }
-}
-
-/// Install the systemd timer for automatic updates
-fn install_timer() -> Result<(), String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let systemd_dir = home.join(".config/systemd/user");
-
-    std::fs::create_dir_all(&systemd_dir)
-        .map_err(|e| format!("Failed to create systemd directory: {}", e))?;
-
-    // Determine the executable path based on environment
-    let exec_path = if is_flatpak() {
-        // In Flatpak, use flatpak run to invoke the app
-        "flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --fetch-and-apply".to_string()
-    } else {
-        // Find executable
-        let local_bin = home.join(".local/bin/cosmic-bing-wallpaper");
-        let system_bin = std::path::Path::new("/usr/local/bin/cosmic-bing-wallpaper");
-        let local_script = home.join(".local/share/cosmic-bing-wallpaper/bing-wallpaper.sh");
-
-        if local_bin.exists() {
-            format!("{} --fetch-and-apply", local_bin.display())
-        } else if system_bin.exists() {
-            format!("{} --fetch-and-apply", system_bin.display())
-        } else if local_script.exists() {
-            local_script.to_string_lossy().to_string()
-        } else {
-            return Err("No executable found. Please install the app first.".to_string())
-        }
-    };
-
-    // Write service file
-    let service_content = format!(r#"[Unit]
-Description=Fetch and set Bing daily wallpaper for COSMIC desktop
-After=network-online.target graphical-session.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart={}
-Environment=HOME=%h
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-
-[Install]
-WantedBy=default.target
-"#, exec_path);
-
-    std::fs::write(systemd_dir.join("cosmic-bing-wallpaper.service"), &service_content)
-        .map_err(|e| format!("Failed to write service file: {}", e))?;
-
-    // Write timer file
-    let timer_content = r#"[Unit]
-Description=Daily Bing wallpaper update timer
-
-[Timer]
-OnCalendar=*-*-* 08:00:00
-OnBootSec=5min
-RandomizedDelaySec=300
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-"#;
-
-    std::fs::write(systemd_dir.join("cosmic-bing-wallpaper.timer"), timer_content)
-        .map_err(|e| format!("Failed to write timer file: {}", e))?;
-
-    // Write login service
-    let login_service_content = format!(r#"[Unit]
-Description=Fetch Bing wallpaper on login/wake
-After=graphical-session.target network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStartPre=/bin/sleep 10
-ExecStart={}
-Environment=HOME=%h
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-
-[Install]
-WantedBy=graphical-session.target
-"#, exec_path);
-
-    std::fs::write(systemd_dir.join("cosmic-bing-wallpaper-login.service"), &login_service_content)
-        .map_err(|e| format!("Failed to write login service file: {}", e))?;
-
-    // Reload and enable (using blocking commands - these are quick operations)
-    let reload = run_systemctl(&["--user", "daemon-reload"])
-        .map_err(|e| format!("Failed to reload systemd: {}", e))?;
-
-    if !reload.status.success() {
-        return Err("Failed to reload systemd daemon".to_string());
-    }
-
-    let enable_timer = run_systemctl(&["--user", "enable", "--now", "cosmic-bing-wallpaper.timer"])
-        .map_err(|e| format!("Failed to enable timer: {}", e))?;
-
-    if !enable_timer.status.success() {
-        return Err(format!("Failed to enable timer: {}", String::from_utf8_lossy(&enable_timer.stderr)));
-    }
-
-    let enable_login = run_systemctl(&["--user", "enable", "cosmic-bing-wallpaper-login.service"])
-        .map_err(|e| format!("Failed to enable login service: {}", e))?;
-
-    if !enable_login.status.success() {
-        return Err(format!("Failed to enable login service: {}", String::from_utf8_lossy(&enable_login.stderr)));
-    }
-
-    Ok(())
-}
-
-/// Uninstall the systemd timer
-fn uninstall_timer() -> Result<(), String> {
-    let output = run_systemctl(&["--user", "disable", "--now", "cosmic-bing-wallpaper.timer"])
-        .map_err(|e| format!("Failed to disable timer: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!("Failed to disable timer: {}", String::from_utf8_lossy(&output.stderr)));
-    }
-
-    let _ = run_systemctl(&["--user", "disable", "cosmic-bing-wallpaper-login.service"]);
-
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let systemd_dir = home.join(".config/systemd/user");
-
-    let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper.service"));
-    let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper.timer"));
-    let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper-login.service"));
-
-    let _ = run_systemctl(&["--user", "daemon-reload"]);
-
-    Ok(())
-}
-
 /// Run a host command, using flatpak-spawn when in Flatpak sandbox
 fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
     if is_flatpak() {
@@ -586,7 +406,7 @@ fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
 }
 
 /// Apply wallpaper to COSMIC desktop
-fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
+pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     let config_path = dirs::config_dir()
         .ok_or("Could not find config directory")?
         .join("cosmic/com.system76.CosmicBackground/v1/all");
@@ -627,24 +447,5 @@ fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     match check {
         Ok(output) if output.status.success() => Ok(()),
         _ => Err("cosmic-bg failed to start".to_string())
-    }
-}
-
-/// Run the D-Bus daemon
-pub async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
-    let state = Arc::new(RwLock::new(DaemonState::new()));
-    let service = WallpaperService::new(state);
-
-    let _conn = connection::Builder::session()?
-        .name(SERVICE_NAME)?
-        .serve_at(OBJECT_PATH, service)?
-        .build()
-        .await?;
-
-    println!("D-Bus daemon running at {} on {}", OBJECT_PATH, SERVICE_NAME);
-
-    // Keep the daemon running
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
     }
 }

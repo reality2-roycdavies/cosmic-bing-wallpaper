@@ -13,6 +13,18 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Get the app config directory path
+/// In Flatpak, we use the exposed host config directory rather than XDG_CONFIG_HOME
+fn app_config_dir() -> Option<PathBuf> {
+    if std::path::Path::new("/.flatpak-info").exists() {
+        // In Flatpak, use the exposed host config directory
+        dirs::home_dir().map(|h| h.join(".config/cosmic-bing-wallpaper"))
+    } else {
+        // Native: use standard XDG config directory
+        dirs::config_dir().map(|d| d.join("cosmic-bing-wallpaper"))
+    }
+}
+
 /// Represents a Bing regional market.
 ///
 /// Bing serves different "Image of the Day" content based on geographic region.
@@ -64,8 +76,8 @@ pub struct Config {
     /// Selected Bing market code (e.g., "en-US").
     /// Determines which regional image is fetched.
     pub market: String,
-    /// Whether automatic daily updates are enabled (via systemd timer).
-    /// Note: This flag is stored but the actual timer is managed separately.
+    /// Whether automatic daily updates are enabled.
+    /// Note: This flag is stored but the actual timer state is in timer_state.json.
     pub auto_update: bool,
     /// Number of days to keep old wallpapers before automatic cleanup.
     /// Set to 0 to keep wallpapers forever. Cleanup runs after each download.
@@ -125,7 +137,7 @@ impl Config {
     ///
     /// The config is stored at `~/.config/cosmic-bing-wallpaper/config.json`
     fn config_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("cosmic-bing-wallpaper/config.json"))
+        app_config_dir().map(|p| p.join("config.json"))
     }
 
     /// Loads the configuration from disk.

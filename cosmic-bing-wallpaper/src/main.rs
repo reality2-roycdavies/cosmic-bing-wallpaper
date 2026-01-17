@@ -7,25 +7,25 @@
 //! - Fetches today's Bing image from multiple regional markets
 //! - Previews images before applying as wallpaper
 //! - Maintains a history of downloaded wallpapers
-//! - Integrates with systemd user timers for automatic daily updates
+//! - Internal timer for automatic daily updates (Flatpak-friendly)
 //! - System tray icon for background operation
-//! - D-Bus daemon for IPC between GUI and tray components
+//! - D-Bus service for IPC between GUI and tray components
 //!
-//! ## Architecture
-//! The application uses a daemon+clients architecture with D-Bus for IPC:
+//! ## Architecture (Flatpak-friendly)
+//! The tray process owns the wallpaper service and timer:
 //!
-//! - `daemon.rs` - Background D-Bus service providing core wallpaper functionality
-//! - `dbus_client.rs` - Client proxy for communicating with the daemon
+//! - `service.rs` - Wallpaper service (embedded in tray, exposes D-Bus interface)
+//! - `timer.rs` - Internal timer (replaces systemd timer)
+//! - `dbus_client.rs` - Client proxy for GUI to communicate with tray
 //! - `app.rs` - GUI application using libcosmic (MVU pattern)
-//! - `tray.rs` - System tray icon (uses D-Bus when daemon is available)
+//! - `tray.rs` - System tray icon with embedded service
 //! - `bing.rs` - Bing API client for fetching image metadata and downloading
 //! - `config.rs` - User configuration and regional market definitions
 //!
 //! ## CLI Usage
-//! - No arguments: Launch the GUI application
-//! - `--tray`: Run in system tray only (background mode)
-//! - `--daemon`: Run as D-Bus daemon (background service)
-//! - `--fetch-and-apply`: Fetch today's image and apply as wallpaper (for systemd timer)
+//! - No arguments: Start tray + open GUI
+//! - `--tray`: Run in system tray only (for autostart)
+//! - `--fetch`: CLI fetch and apply (one-shot, no tray)
 //! - `--help`: Show help message
 //!
 //! ## Created with Claude
@@ -36,7 +36,8 @@ mod app;
 mod config;
 mod bing;
 mod tray;
-mod daemon;
+mod service;
+mod timer;
 mod dbus_client;
 
 use app::BingWallpaper;
@@ -45,21 +46,31 @@ use std::fs;
 use std::io::Write;
 use std::process::Command;
 
+/// Get the app config directory path
+/// In Flatpak, we use the exposed host config directory rather than XDG_CONFIG_HOME
+/// because we have --filesystem=~/.config/cosmic-bing-wallpaper:create permission
+fn app_config_dir() -> std::path::PathBuf {
+    if service::is_flatpak() {
+        // In Flatpak, use the exposed host config directory
+        dirs::home_dir()
+            .map(|h| h.join(".config/cosmic-bing-wallpaper"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-bing-wallpaper"))
+    } else {
+        // Native: use standard XDG config directory
+        dirs::config_dir()
+            .map(|d| d.join("cosmic-bing-wallpaper"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-bing-wallpaper"))
+    }
+}
+
 /// Get the path to the tray lockfile
-/// Uses config directory to work correctly in Flatpak sandboxes
 fn tray_lockfile_path() -> std::path::PathBuf {
-    dirs::config_dir()
-        .map(|d| d.join("cosmic-bing-wallpaper"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-        .join("tray.lock")
+    app_config_dir().join("tray.lock")
 }
 
 /// Get the path to the GUI lockfile
 fn gui_lockfile_path() -> std::path::PathBuf {
-    dirs::config_dir()
-        .map(|d| d.join("cosmic-bing-wallpaper"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-        .join("gui.lock")
+    app_config_dir().join("gui.lock")
 }
 
 /// Check if the tray is already running using a lockfile
@@ -129,13 +140,57 @@ pub fn remove_gui_lockfile() {
     let _ = fs::remove_file(gui_lockfile_path());
 }
 
+/// Ensure autostart entry exists for the tray
+/// Creates an XDG autostart desktop file so the tray starts on login
+fn ensure_autostart() {
+    let autostart_dir = if service::is_flatpak() {
+        // In Flatpak, write to the host's autostart directory
+        dirs::home_dir().map(|h| h.join(".config/autostart"))
+    } else {
+        dirs::config_dir().map(|d| d.join("autostart"))
+    };
+
+    let Some(autostart_dir) = autostart_dir else {
+        return;
+    };
+
+    let desktop_file = autostart_dir.join("io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop");
+
+    // Only create if it doesn't exist (don't overwrite user modifications)
+    if desktop_file.exists() {
+        return;
+    }
+
+    let _ = fs::create_dir_all(&autostart_dir);
+
+    let exec_cmd = if service::is_flatpak() {
+        "flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray"
+    } else {
+        "cosmic-bing-wallpaper --tray"
+    };
+
+    let content = format!(
+        r#"[Desktop Entry]
+Type=Application
+Name=Bing Wallpaper
+Comment=Bing Daily Wallpaper system tray
+Exec={exec_cmd}
+Icon=io.github.reality2_roycdavies.cosmic-bing-wallpaper
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+"#
+    );
+
+    let _ = fs::write(&desktop_file, content);
+}
+
 /// Application entry point.
 ///
-/// Supports four modes:
-/// 1. GUI mode (default): Launches the COSMIC application window
-/// 2. Tray mode (`--tray`): Runs in system tray for background operation
-/// 3. Daemon mode (`--daemon`): Runs as D-Bus service for IPC
-/// 4. CLI mode (`--fetch-and-apply`): Headless fetch and apply for systemd timer
+/// Supports three modes:
+/// 1. Default: Start tray (if not running) + open GUI
+/// 2. Tray mode (`--tray`): Run in system tray only (for autostart)
+/// 3. CLI mode (`--fetch`): Headless fetch and apply (one-shot)
 fn main() -> cosmic::iced::Result {
     let args: Vec<String> = std::env::args().collect();
 
@@ -148,8 +203,9 @@ fn main() -> cosmic::iced::Result {
                     println!("Bing Wallpaper tray is already running.");
                     return Ok(());
                 }
-                // Run in system tray mode (background)
-                println!("Starting Bing Wallpaper in system tray...");
+                // Run in system tray mode (background) - this includes D-Bus service
+                println!("Starting Bing Wallpaper tray with D-Bus service...");
+                ensure_autostart();
                 create_tray_lockfile();
                 let result = tray::run_tray();
                 remove_tray_lockfile();
@@ -159,18 +215,8 @@ fn main() -> cosmic::iced::Result {
                 }
                 return Ok(());
             }
-            "--daemon" | "-d" => {
-                // Run as D-Bus daemon
-                println!("Starting Bing Wallpaper daemon...");
-                let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-                if let Err(e) = rt.block_on(daemon::run_daemon()) {
-                    eprintln!("Daemon error: {}", e);
-                    std::process::exit(1);
-                }
-                return Ok(());
-            }
-            "--fetch-and-apply" | "-f" => {
-                // Run in headless mode for systemd timer
+            "--fetch-and-apply" | "--fetch" | "-f" => {
+                // Run in headless mode (one-shot fetch and apply)
                 return run_headless();
             }
             "--help" | "-h" => {
@@ -223,17 +269,15 @@ fn print_help(program: &str) {
     println!("Bing Wallpaper for COSMIC Desktop\n");
     println!("Usage: {} [OPTIONS]\n", program);
     println!("Options:");
-    println!("  (none)             Launch the GUI application");
-    println!("  --tray, -t         Run in system tray (background mode)");
-    println!("  --daemon, -d       Run as D-Bus daemon (background service)");
-    println!("  --fetch-and-apply  Fetch today's image and apply as wallpaper");
+    println!("  (none)             Start tray (if needed) + open GUI");
+    println!("  --tray, -t         Run in system tray only (for autostart)");
+    println!("  --fetch, -f        Fetch and apply wallpaper (one-shot, no GUI)");
     println!("  --help, -h         Show this help message");
     println!();
-    println!("The system tray mode runs in the background and provides quick");
-    println!("access to wallpaper functions via right-click menu.");
+    println!("The tray process runs the D-Bus service and manages the internal timer.");
+    println!("The GUI connects to the tray via D-Bus for wallpaper operations.");
     println!();
-    println!("The daemon mode runs a D-Bus service that manages wallpapers.");
-    println!("Both the GUI and tray can connect to the daemon for synchronized state.");
+    println!("For autostart, add the --tray argument to your session startup.");
 }
 
 /// Maximum number of retry attempts for network operations
@@ -244,7 +288,7 @@ const INITIAL_RETRY_DELAY_SECS: u64 = 10;
 
 /// Runs the application in headless mode (no GUI).
 ///
-/// Used by the systemd timer to fetch and apply the wallpaper automatically.
+/// Used for CLI fetch mode to fetch and apply the wallpaper automatically.
 /// Includes retry logic with exponential backoff for network failures.
 fn run_headless() -> cosmic::iced::Result {
     use tokio::runtime::Runtime;

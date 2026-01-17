@@ -9,7 +9,8 @@ This document captures learnings and solutions discovered while developing cosmi
 3. [Dark/Light Mode Detection](#darklight-mode-detection)
 4. [Installation and Upgrades](#installation-and-upgrades)
 5. [Problem-Solving Journey](#problem-solving-journey)
-6. [Resources](#resources)
+6. [Preparing for Flatpak Distribution](#preparing-for-flatpak-distribution)
+7. [Resources](#resources)
 
 ---
 
@@ -423,13 +424,332 @@ This section documents the iterative debugging process, which is valuable for un
 
 ---
 
+## Preparing for Flatpak Distribution
+
+This section documents the journey of making both cosmic-bing-wallpaper and cosmic-runkat Flatpak-compatible for submission to Flathub. The work was done simultaneously for both applications, so the learnings apply to both.
+
+### Interaction Summary
+
+The Flatpak compatibility work involved several key challenges:
+
+1. **Architecture refactoring** - Eliminating systemd dependencies that don't work in Flatpak sandboxes
+2. **PID namespace conflicts** - Resolving StatusNotifierItem D-Bus name collisions between sandboxed apps
+3. **Path handling** - Adapting to Flatpak's filesystem remapping
+4. **Auto-start functionality** - Implementing XDG autostart for login startup
+5. **UI cleanup** - Removing features that can't work in sandboxes
+
+### Thematic Analysis
+
+#### Theme 1: Eliminating systemd Dependencies
+
+**The Challenge:** Our original architecture used systemd user services for:
+- Running a persistent daemon process
+- Timer-based scheduling (daily wallpaper updates)
+- Auto-starting on login
+
+**Why This Doesn't Work in Flatpak:** Flatpak sandboxes are isolated from the host's systemd. Apps cannot install or control systemd units from within the sandbox.
+
+**The Solution:** Consolidate everything into the tray process:
+
+```
+Before (systemd-based):
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  systemd timer  │───▶│     daemon      │◀───│   tray/GUI      │
+│  (scheduling)   │    │  (D-Bus owner)  │    │  (D-Bus client) │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+
+After (Flatpak-compatible):
+┌──────────────────────────────────────────────┐
+│               Tray Process                    │
+│  ┌────────────┐  ┌────────────┐  ┌────────┐ │
+│  │ D-Bus Svc  │  │  Timer     │  │  Tray  │ │
+│  │ (owner)    │  │ (internal) │  │  Icon  │ │
+│  └────────────┘  └────────────┘  └────────┘ │
+└──────────────────────────────────────────────┘
+        ▲
+        │ D-Bus calls
+┌───────┴───────┐
+│      GUI      │
+│ (D-Bus client)│
+└───────────────┘
+```
+
+**Implementation Details:**
+
+1. **Internal Timer:** Created `timer.rs` with a tokio-based timer that:
+   - Calculates time until next scheduled execution
+   - Persists state to a JSON file
+   - Fires events via an async channel
+
+2. **Embedded Service:** The `WallpaperService` (D-Bus interface) now lives inside the tray process, not a separate daemon
+
+3. **GUI as Client:** The GUI connects to the tray's D-Bus service to query state and trigger actions
+
+#### Theme 2: PID Namespace Conflicts
+
+**The Problem:** When running both cosmic-runkat and cosmic-bing-wallpaper as Flatpaks simultaneously, only one tray icon would appear. The other would silently fail.
+
+**Root Cause Discovery:** StatusNotifierItem registers D-Bus well-known names based on PID:
+```
+org.kde.StatusNotifierItem-{PID}-{instance}
+```
+
+Inside Flatpak sandboxes, PID namespace isolation means every app sees itself as PID 2. Both apps tried to register:
+```
+org.kde.StatusNotifierItem-2-1
+```
+
+The second app to register would fail because the name was already taken.
+
+**The Solution:** ksni 0.3 added a `disable_dbus_name()` method specifically for Flatpak:
+
+```rust
+// Detect Flatpak sandbox
+let is_sandboxed = std::path::Path::new("/.flatpak-info").exists();
+
+// Disable well-known name registration in Flatpak
+let handle = tray
+    .disable_dbus_name(is_sandboxed)
+    .spawn()
+    .await?;
+```
+
+With the well-known name disabled, ksni uses only its unique connection name (`:1.xxx`), which is guaranteed unique per D-Bus connection.
+
+**Verification:**
+```bash
+# Before fix - both register same name
+dbus-send ... ListNames | grep StatusNotifierItem
+# org.kde.StatusNotifierItem-2-1  (conflict!)
+
+# After fix - no well-known names, just unique connections
+dbus-send ... RegisteredStatusNotifierItems
+# :1.5016, :1.5024  (no conflict)
+```
+
+#### Theme 3: Flatpak Path Handling
+
+**The Problem:** `dirs::config_dir()` returns different paths:
+- Native: `~/.config/`
+- Flatpak: `~/.var/app/<app-id>/config/`
+
+Our app needs to:
+1. Read COSMIC desktop config (`~/.config/cosmic/`)
+2. Write app config that persists across updates
+3. Write wallpapers to user-accessible location
+
+**The Solution:** Detect Flatpak and use appropriate paths:
+
+```rust
+fn app_config_dir() -> PathBuf {
+    if std::path::Path::new("/.flatpak-info").exists() {
+        // In Flatpak: use the exposed host config directory
+        // (requires --filesystem=~/.config/app-name:create permission)
+        dirs::home_dir()
+            .map(|h| h.join(".config/cosmic-bing-wallpaper"))
+            .unwrap_or_else(|| PathBuf::from("/tmp/cosmic-bing-wallpaper"))
+    } else {
+        // Native: use standard XDG directory
+        dirs::config_dir()
+            .map(|d| d.join("cosmic-bing-wallpaper"))
+            .unwrap_or_else(|| PathBuf::from("/tmp/cosmic-bing-wallpaper"))
+    }
+}
+```
+
+**Flatpak Manifest Permissions:**
+```yaml
+finish-args:
+  # Read COSMIC theme and background config
+  - --filesystem=~/.config/cosmic:rw
+  # App config (persists across Flatpak updates)
+  - --filesystem=~/.config/cosmic-bing-wallpaper:create
+  # Wallpaper storage
+  - --filesystem=~/Pictures/bing-wallpapers:create
+  # Autostart entry
+  - --filesystem=~/.config/autostart:create
+```
+
+#### Theme 4: XDG Autostart for Login Startup
+
+**The Problem:** Without systemd user services, how do we start the tray on login?
+
+**The Solution:** XDG autostart specification - place `.desktop` files in `~/.config/autostart/`:
+
+```rust
+fn ensure_autostart() {
+    let autostart_dir = if is_flatpak() {
+        dirs::home_dir().map(|h| h.join(".config/autostart"))
+    } else {
+        dirs::config_dir().map(|d| d.join("autostart"))
+    };
+
+    let desktop_file = autostart_dir?.join("app-id.desktop");
+
+    // Don't overwrite user modifications
+    if desktop_file.exists() {
+        return;
+    }
+
+    let exec_cmd = if is_flatpak() {
+        "flatpak run io.github.app-id --tray"
+    } else {
+        "app-name --tray"
+    };
+
+    let content = format!(r#"[Desktop Entry]
+Type=Application
+Name=App Name
+Comment=Description
+Exec={exec_cmd}
+Icon=app-id
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+"#);
+
+    fs::write(&desktop_file, content).ok();
+}
+```
+
+**Key Design Decisions:**
+1. **Self-installing:** Apps create their own autostart entries on first tray run
+2. **No overwrite:** If file exists, don't replace it (respects user modifications)
+3. **Platform-aware:** Different `Exec` commands for native vs Flatpak
+4. **Permission required:** Manifest needs `--filesystem=~/.config/autostart:create`
+
+#### Theme 5: UI Cleanup for Sandbox Compatibility
+
+**The Problem:** Some features don't work in Flatpak sandboxes:
+- `open::that()` can't open folders in file manager (needs portal API)
+- Arbitrary file browser access is restricted
+
+**The Solution:** Remove non-functional features rather than leaving broken UI:
+
+1. **Removed "Open Wallpaper Folder"** from tray menu
+2. **Removed "Open Folder" button** from Downloaded Wallpapers view
+3. **Renamed "Open Application" to "Settings ..."** for consistency
+4. **Removed `open` crate dependency** (no longer needed)
+
+**Alternative for Future:** Could implement folder opening via portal API:
+```rust
+// Would use org.freedesktop.portal.OpenURI
+// But adds complexity for minor feature
+```
+
+### Problem-Solving Journey: Flatpak Edition
+
+**Day 1: The Mysterious Missing Icon**
+
+Started by running both Flatpaks simultaneously. Only RunKat appeared. No error messages.
+
+**Investigation:**
+1. Checked both processes were running - yes
+2. Checked D-Bus service registration - both registered
+3. Searched for StatusNotifierItem issues - found the PID naming pattern
+
+**Discovery:** Logged D-Bus names, saw both trying to claim `StatusNotifierItem-2-1`
+
+**Day 2: Finding the ksni Solution**
+
+**Iteration 1:** Tried registering with different instance numbers
+- Result: ksni doesn't expose this
+
+**Iteration 2:** Tried different tray IDs
+- Result: ID doesn't affect D-Bus name registration
+
+**Iteration 3:** Searched ksni issues and found `disable_dbus_name()` in 0.3
+- Result: Success! Both icons now visible
+
+**API Difference:**
+```rust
+// ksni 0.2 (async)
+let handle = tray.spawn().await?;
+
+// ksni 0.3 (async)
+let handle = tray.disable_dbus_name(is_sandboxed).spawn().await?;
+
+// ksni 0.3 (blocking - for cosmic-runkat)
+let handle = BlockingTrayMethods::disable_dbus_name(tray, is_sandboxed)
+    .spawn()?;
+```
+
+**Day 3: Config Path Chaos**
+
+**Problem:** Settings weren't persisting across Flatpak runs
+
+**Investigation:**
+1. Checked where config was being written
+2. Found it going to `~/.var/app/.../config/` (Flatpak sandbox)
+3. But we had permission for `~/.config/app-name/`
+
+**Solution:** Created `app_config_dir()` helper to use correct paths based on environment
+
+**Day 4: Autostart Implementation**
+
+**Problem:** How to start tray on login without systemd?
+
+**Research:** XDG autostart specification
+
+**Implementation:** Apps create their own `.desktop` files in `~/.config/autostart/`
+
+**Gotcha:** Needed to add `--filesystem=~/.config/autostart:create` to manifest
+
+### Key Learnings
+
+1. **Flatpak requires architectural thinking** - Can't just package existing app; may need significant refactoring
+
+2. **PID namespaces affect D-Bus naming** - Any D-Bus name containing PID will conflict between sandboxed apps
+
+3. **ksni 0.3 is essential for Flatpak** - The `disable_dbus_name()` feature was added specifically for this use case
+
+4. **Path handling must be Flatpak-aware** - `dirs::config_dir()` is remapped; use explicit paths with appropriate permissions
+
+5. **XDG autostart replaces systemd** - Standard, portable, works across desktop environments
+
+6. **Remove broken features** - Better to remove than leave non-functional UI elements
+
+7. **cargo-sources.json must be regenerated** - When dependencies change, run flatpak-cargo-generator again
+
+### Tools and Commands
+
+**Flatpak cargo source generation:**
+```bash
+curl -sL "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py" -o fcg.py
+python3 fcg.py Cargo.lock -o cargo-sources.json
+```
+
+**Build and install Flatpak locally:**
+```bash
+flatpak-builder --force-clean --user --install build-dir manifest.yml
+```
+
+**Test both apps together:**
+```bash
+flatpak run io.github.app1 --tray &
+flatpak run io.github.app2 --tray &
+```
+
+**Check StatusNotifierItem registrations:**
+```bash
+dbus-send --session \
+  --dest=org.kde.StatusNotifierWatcher \
+  --print-reply \
+  /StatusNotifierWatcher \
+  org.freedesktop.DBus.Properties.Get \
+  string:org.kde.StatusNotifierWatcher \
+  string:RegisteredStatusNotifierItems
+```
+
+---
+
 ## Resources
 
 ### Crates Used
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| `ksni` | 0.2 | StatusNotifierItem (system tray) |
+| `ksni` | 0.3 | StatusNotifierItem (system tray) |
 | `zbus` | 4 | D-Bus communication |
 | `notify` | 6 | File system watching |
 | `image` | 0.24 | PNG decoding |

@@ -1,7 +1,7 @@
 //! # D-Bus Client Module
 //!
-//! Provides a high-level client interface for communicating with the wallpaper daemon.
-//! Used by both the GUI application and system tray.
+//! Provides a high-level client interface for communicating with the wallpaper service.
+//! Used by the GUI application to communicate with the tray process.
 //!
 //! ## Usage
 //!
@@ -13,7 +13,7 @@
 //!
 //! ## Signal Handling
 //!
-//! The client can subscribe to daemon signals for real-time updates:
+//! The client can subscribe to service signals for real-time updates:
 //!
 //! ```ignore
 //! let mut stream = client.subscribe_wallpaper_changed().await?;
@@ -28,7 +28,7 @@
 
 use zbus::{proxy, Connection};
 
-use crate::daemon::{SERVICE_NAME, WallpaperInfo};
+use crate::service::{SERVICE_NAME, WallpaperInfo};
 
 /// D-Bus proxy for the wallpaper service
 #[proxy(
@@ -85,33 +85,32 @@ trait WallpaperService {
     async fn fetch_progress(&self, state: String, message: String) -> zbus::Result<()>;
 }
 
-/// High-level client for the wallpaper daemon
+/// High-level client for the wallpaper service (running in tray)
 pub struct WallpaperClient {
     proxy: WallpaperServiceProxy<'static>,
 }
 
 impl WallpaperClient {
-    /// Connect to the wallpaper daemon
+    /// Connect to the wallpaper service
     ///
-    /// Returns an error if the daemon is not running
+    /// Returns an error if the tray is not running
     pub async fn connect() -> zbus::Result<Self> {
         let connection = Connection::session().await?;
         let proxy = WallpaperServiceProxy::new(&connection).await?;
         Ok(Self { proxy })
     }
 
-    /// Try to connect, starting the daemon if necessary
+    /// Try to connect, retrying if service isn't immediately available
     ///
-    /// First attempts a direct connection. If that fails, tries to start
-    /// the daemon via D-Bus activation.
+    /// First attempts a direct connection. If that fails, waits briefly
+    /// and retries in case the service is still starting.
     pub async fn connect_or_start() -> zbus::Result<Self> {
         // Try direct connection first
         if let Ok(client) = Self::connect().await {
             return Ok(client);
         }
 
-        // D-Bus should auto-activate the service if .service file is installed
-        // Just retry the connection - D-Bus will start the daemon
+        // Wait briefly and retry - service may be starting
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         Self::connect().await
     }
@@ -197,8 +196,8 @@ impl WallpaperClient {
     }
 }
 
-/// Check if the daemon is available (service is registered on D-Bus)
-pub async fn is_daemon_available() -> bool {
+/// Check if the service is available (tray is running and registered on D-Bus)
+pub async fn is_service_available() -> bool {
     if let Ok(connection) = Connection::session().await {
         connection
             .call_method(

@@ -32,7 +32,7 @@
 //! - Writing wallpaper config to `~/.config/cosmic/com.system76.CosmicBackground/v1/all`
 //! - Using RON (Rusty Object Notation) format expected by cosmic-bg
 //! - Restarting cosmic-bg process to apply changes
-//! - Managing systemd user timers for automatic updates
+//! - Managing automatic updates via internal timer (D-Bus)
 
 use chrono;
 use cosmic::app::Core;
@@ -43,28 +43,8 @@ use std::path::PathBuf;
 
 use crate::bing::{BingImage, fetch_bing_image_info, download_image};
 use crate::config::{Config, MARKETS};
-
-/// Check if running inside a Flatpak sandbox
-fn is_flatpak() -> bool {
-    std::path::Path::new("/.flatpak-info").exists()
-}
-
-/// Run systemctl command, using flatpak-spawn when in Flatpak sandbox
-async fn run_systemctl(args: &[&str]) -> std::io::Result<std::process::Output> {
-    if is_flatpak() {
-        let mut spawn_args = vec!["--host", "systemctl"];
-        spawn_args.extend(args);
-        tokio::process::Command::new("flatpak-spawn")
-            .args(&spawn_args)
-            .output()
-            .await
-    } else {
-        tokio::process::Command::new("systemctl")
-            .args(args)
-            .output()
-            .await
-    }
-}
+use crate::dbus_client::WallpaperClient;
+use crate::service::is_flatpak;
 
 /// Unique application identifier for COSMIC.
 /// Used for window identification and desktop integration.
@@ -95,7 +75,7 @@ pub struct BingWallpaper {
     view_mode: ViewMode,
     /// Pre-computed market names for dropdown (avoids lifetime issues in view)
     market_names: Vec<String>,
-    /// Current status of the systemd auto-update timer
+    /// Current status of the auto-update timer
     timer_status: TimerStatus,
     /// Path of wallpaper pending deletion (for confirmation)
     pending_delete: Option<PathBuf>,
@@ -124,9 +104,9 @@ pub enum ViewMode {
     History,
 }
 
-/// Status of the systemd user timer for automatic updates.
+/// Status of the auto-update timer.
 ///
-/// Checked asynchronously on app startup and after install/uninstall operations.
+/// Checked asynchronously on app startup and after enable/disable operations.
 #[derive(Debug, Clone, Default)]
 pub enum TimerStatus {
     /// Timer status is being queried
@@ -166,8 +146,6 @@ pub enum Message {
     AppliedWallpaper(Result<(), String>),
 
     // === UI Navigation ===
-    /// Open wallpaper directory in file manager
-    OpenWallpaperFolder,
     /// User selected a different market from dropdown
     MarketSelected(usize),
     /// Switch to history view
@@ -184,7 +162,7 @@ pub enum Message {
     CancelDeleteHistoryItem,
 
     // === Timer Management ===
-    /// Query systemd for timer status
+    /// Query timer status via D-Bus
     CheckTimerStatus,
     /// Timer status query completed
     TimerStatusChecked(TimerStatus),
@@ -232,7 +210,7 @@ impl Application for BingWallpaper {
     ///
     /// Automatically triggers two startup actions:
     /// 1. Fetch today's Bing image
-    /// 2. Check systemd timer status
+    /// 2. Check timer status via D-Bus
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let config = Config::load();
 
@@ -386,11 +364,6 @@ impl Application for BingWallpaper {
                         self.status_message = format!("Error: {}", e);
                     }
                 }
-                Task::none()
-            }
-
-            Message::OpenWallpaperFolder => {
-                let _ = open::that(&self.config.wallpaper_dir);
                 Task::none()
             }
 
@@ -688,10 +661,6 @@ impl BingWallpaper {
             .push(text::title1("Downloaded Wallpapers"))
             .push(cosmic::widget::horizontal_space())
             .push(
-                button::standard("Open Folder")
-                    .on_press(Message::OpenWallpaperFolder)
-            )
-            .push(
                 button::icon(widget::icon::from_name("view-refresh-symbolic"))
                     .on_press(Message::RefreshHistory)
             );
@@ -896,262 +865,86 @@ fn scan_history(wallpaper_dir: &str) -> Vec<HistoryItem> {
     items
 }
 
-/// Queries systemd for the status of the auto-update timer.
-///
-/// Uses `systemctl --user` commands to:
-/// 1. Check if the timer is active
-/// 2. If active, get the next scheduled run time
+/// Queries the tray service for the status of the auto-update timer via D-Bus.
 ///
 /// # Returns
-/// - `TimerStatus::Installed` with next run time if timer is active
-/// - `TimerStatus::NotInstalled` if timer is not active
-/// - `TimerStatus::Error` if systemctl command fails
+/// - `TimerStatus::Installed` with next run time if timer is enabled
+/// - `TimerStatus::NotInstalled` if timer is disabled
+/// - `TimerStatus::Error` if D-Bus connection fails (tray not running)
 async fn check_timer_status() -> TimerStatus {
-    // Check if timer is active
-    let output = run_systemctl(&["--user", "is-active", "cosmic-bing-wallpaper.timer"]).await;
-
-    match output {
-        Ok(out) => {
-            let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if status == "active" {
-                // Timer is active - get the next scheduled run time
-                // Use systemctl show with multiple properties to get reliable data
-                let next_output = run_systemctl(&["--user", "show", "cosmic-bing-wallpaper.timer",
-                           "--property=NextElapseUSecRealtime"]).await;
-
-                let next_run = match next_output {
-                    Ok(out) => {
-                        let raw = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        // Parse the property output (format: NextElapseUSecRealtime=TIMESTAMP)
-                        let timestamp = raw.strip_prefix("NextElapseUSecRealtime=")
-                            .unwrap_or(&raw);
-
-                        if timestamp.is_empty() || timestamp == "n/a" {
-                            "Scheduled (time unknown)".to_string()
-                        } else {
-                            // The timestamp is in microseconds since epoch or a formatted string
-                            // Try to parse and format it nicely
-                            if let Ok(usecs) = timestamp.parse::<u64>() {
-                                // Convert microseconds to seconds and format
-                                let secs = usecs / 1_000_000;
-                                if let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
-                                    let local: chrono::DateTime<chrono::Local> = dt.into();
-                                    local.format("%a %b %d %H:%M").to_string()
-                                } else {
-                                    "Scheduled".to_string()
-                                }
-                            } else {
-                                // Already a formatted string, use as-is
-                                timestamp.to_string()
-                            }
-                        }
+    match WallpaperClient::connect().await {
+        Ok(client) => {
+            match client.get_timer_enabled().await {
+                Ok(enabled) => {
+                    if enabled {
+                        // Get the next run time
+                        let next_run = match client.get_timer_next_run().await {
+                            Ok(time) if !time.is_empty() => time,
+                            _ => "Scheduled".to_string(),
+                        };
+                        TimerStatus::Installed { next_run }
+                    } else {
+                        TimerStatus::NotInstalled
                     }
-                    Err(_) => "Scheduled (time unknown)".to_string()
-                };
-                TimerStatus::Installed { next_run }
+                }
+                Err(e) => TimerStatus::Error(format!("D-Bus error: {}", e))
+            }
+        }
+        Err(_) => {
+            // Tray not running - check timer state file directly
+            let state = crate::timer::TimerState::load();
+            if state.enabled {
+                TimerStatus::Installed { next_run: "Tray not running".to_string() }
             } else {
                 TimerStatus::NotInstalled
             }
         }
-        Err(e) => TimerStatus::Error(e.to_string())
     }
 }
 
-/// Installs the systemd user timer for automatic daily wallpaper updates.
+/// Enables the auto-update timer via D-Bus to the tray service.
 ///
-/// Creates two systemd unit files in `~/.config/systemd/user/`:
-/// - `cosmic-bing-wallpaper.service`: Runs the binary or script
-/// - `cosmic-bing-wallpaper.timer`: Schedules daily execution at 8:00 AM
-///
-/// ## Executable Detection
-/// When running in Flatpak, uses `flatpak run` to invoke the app.
-/// Otherwise looks for the executable in this order:
-/// 1. Installed binary at `~/.local/bin/cosmic-bing-wallpaper`
-/// 2. System binary at `/usr/local/bin/cosmic-bing-wallpaper`
-/// 3. Shell script at `~/.local/share/cosmic-bing-wallpaper/bing-wallpaper.sh`
-///
-/// ## AppImage Support
-/// When running from an AppImage, the bundled shell script is copied to
-/// `~/.local/share/cosmic-bing-wallpaper/` for persistent use.
-///
-/// ## Timer Configuration
+/// The tray service manages an internal timer that:
 /// - Runs daily at 8:00 AM
-/// - Also runs 5 minutes after boot (catches up if missed)
-/// - Random delay up to 5 minutes to avoid thundering herd
-/// - Persistent: runs immediately if a scheduled time was missed
+/// - Catches up on missed runs after boot (with 5-minute delay)
+/// - Random delay up to 5 minutes to avoid API hammering
 ///
 /// # Errors
-/// Returns error if no executable found, or if file operations fail.
+/// Returns error if D-Bus connection fails (tray not running).
 async fn install_timer() -> Result<(), String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let systemd_dir = home.join(".config/systemd/user");
-
-    // Ensure systemd user directory exists
-    std::fs::create_dir_all(&systemd_dir)
-        .map_err(|e| format!("Failed to create systemd directory: {}", e))?;
-
-    // Determine the executable path based on environment
-    let exec_path = if is_flatpak() {
-        // In Flatpak, use flatpak run to invoke the app
-        "flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --fetch-and-apply".to_string()
-    } else {
-        // Look for the executable in standard locations
-        let local_bin = home.join(".local/bin/cosmic-bing-wallpaper");
-        let system_bin = std::path::Path::new("/usr/local/bin/cosmic-bing-wallpaper");
-        let local_script = home.join(".local/share/cosmic-bing-wallpaper/bing-wallpaper.sh");
-
-        if local_bin.exists() {
-            // Prefer installed binary in user's local bin
-            format!("{} --fetch-and-apply", local_bin.display())
-        } else if system_bin.exists() {
-            // Fall back to system-wide installation
-            format!("{} --fetch-and-apply", system_bin.display())
-        } else {
-            // Fall back to shell script
-            // If running from AppImage, copy the bundled script first
-            if let Ok(appimage_script) = std::env::var("BING_WALLPAPER_SCRIPT") {
-                if let Some(parent) = local_script.parent() {
-                    std::fs::create_dir_all(parent)
-                        .map_err(|e| format!("Failed to create script directory: {}", e))?;
-                }
-                std::fs::copy(&appimage_script, &local_script)
-                    .map_err(|e| format!("Failed to copy script: {}", e))?;
-                // Make it executable
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(&local_script, std::fs::Permissions::from_mode(0o755))
-                        .map_err(|e| format!("Failed to set script permissions: {}", e))?;
-                }
-            }
-
-            if local_script.exists() {
-                local_script.to_string_lossy().to_string()
-            } else {
-                return Err("No executable found. Please install the app first using ./install.sh".to_string());
-            }
+    match WallpaperClient::connect().await {
+        Ok(client) => {
+            client.set_timer_enabled(true).await
+                .map_err(|e| format!("Failed to enable timer: {}", e))
         }
-    };
-
-    // Write service file
-    // Note: We don't hardcode DISPLAY or WAYLAND_DISPLAY because:
-    // 1. COSMIC is Wayland-native and inherits the session environment
-    // 2. The service runs under the user's graphical session via default.target
-    // 3. Hardcoded values like :0 or wayland-1 may not match the actual session
-    let service_content = format!(r#"[Unit]
-Description=Fetch and set Bing daily wallpaper for COSMIC desktop
-After=network-online.target graphical-session.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart={}
-Environment=HOME=%h
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-
-[Install]
-WantedBy=default.target
-"#, exec_path);
-
-    std::fs::write(systemd_dir.join("cosmic-bing-wallpaper.service"), &service_content)
-        .map_err(|e| format!("Failed to write service file: {}", e))?;
-
-    // Write timer file
-    let timer_content = r#"[Unit]
-Description=Daily Bing wallpaper update timer
-
-[Timer]
-OnCalendar=*-*-* 08:00:00
-OnBootSec=5min
-RandomizedDelaySec=300
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-"#;
-
-    std::fs::write(systemd_dir.join("cosmic-bing-wallpaper.timer"), timer_content)
-        .map_err(|e| format!("Failed to write timer file: {}", e))?;
-
-    // Write login service (runs on graphical session start / resume from sleep)
-    let login_service_content = format!(r#"[Unit]
-Description=Fetch Bing wallpaper on login/wake
-After=graphical-session.target network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStartPre=/bin/sleep 10
-ExecStart={}
-Environment=HOME=%h
-Environment=XDG_RUNTIME_DIR=/run/user/%U
-
-[Install]
-WantedBy=graphical-session.target
-"#, exec_path);
-
-    std::fs::write(systemd_dir.join("cosmic-bing-wallpaper-login.service"), &login_service_content)
-        .map_err(|e| format!("Failed to write login service file: {}", e))?;
-
-    // Reload and enable
-    let reload = run_systemctl(&["--user", "daemon-reload"]).await
-        .map_err(|e| format!("Failed to reload systemd: {}", e))?;
-
-    if !reload.status.success() {
-        return Err("Failed to reload systemd daemon".to_string());
+        Err(_) => {
+            // Tray not running - set state directly for next tray start
+            let mut state = crate::timer::TimerState::load();
+            state.enabled = true;
+            state.save()?;
+            Ok(())
+        }
     }
-
-    // Enable timer
-    let enable_timer = run_systemctl(&["--user", "enable", "--now", "cosmic-bing-wallpaper.timer"]).await
-        .map_err(|e| format!("Failed to enable timer: {}", e))?;
-
-    if !enable_timer.status.success() {
-        return Err(format!("Failed to enable timer: {}", String::from_utf8_lossy(&enable_timer.stderr)));
-    }
-
-    // Enable login service
-    let enable_login = run_systemctl(&["--user", "enable", "cosmic-bing-wallpaper-login.service"]).await
-        .map_err(|e| format!("Failed to enable login service: {}", e))?;
-
-    if !enable_login.status.success() {
-        return Err(format!("Failed to enable login service: {}", String::from_utf8_lossy(&enable_login.stderr)));
-    }
-
-    Ok(())
 }
 
-/// Removes the systemd user timer and login service for automatic updates.
-///
-/// Disables and stops both the timer and login service, then removes the unit files from
-/// `~/.config/systemd/user/`. Reloads the systemd daemon afterward.
+/// Disables the auto-update timer via D-Bus to the tray service.
 ///
 /// # Errors
-/// Returns error if systemctl disable command fails. File removal errors
-/// are silently ignored (files may not exist).
+/// Returns error if D-Bus connection fails (tray not running).
 async fn uninstall_timer() -> Result<(), String> {
-    // Disable and stop the timer
-    let output = run_systemctl(&["--user", "disable", "--now", "cosmic-bing-wallpaper.timer"]).await
-        .map_err(|e| format!("Failed to disable timer: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!("Failed to disable timer: {}", String::from_utf8_lossy(&output.stderr)));
+    match WallpaperClient::connect().await {
+        Ok(client) => {
+            client.set_timer_enabled(false).await
+                .map_err(|e| format!("Failed to disable timer: {}", e))
+        }
+        Err(_) => {
+            // Tray not running - set state directly
+            let mut state = crate::timer::TimerState::load();
+            state.enabled = false;
+            state.save()?;
+            Ok(())
+        }
     }
-
-    // Disable login service (ignore errors - may not exist)
-    let _ = run_systemctl(&["--user", "disable", "cosmic-bing-wallpaper-login.service"]).await;
-
-    // Clean up unit files (errors ignored - files may not exist)
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let systemd_dir = home.join(".config/systemd/user");
-
-    let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper.service"));
-    let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper.timer"));
-    let _ = std::fs::remove_file(systemd_dir.join("cosmic-bing-wallpaper-login.service"));
-
-    // Reload daemon to pick up the removal
-    let _ = run_systemctl(&["--user", "daemon-reload"]).await;
-
-    Ok(())
 }
 
 /// Sets a wallpaper image in the COSMIC desktop environment.
@@ -1264,7 +1057,7 @@ async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
 
 /// Public wrapper for headless wallpaper application.
 ///
-/// Used by the CLI `--fetch-and-apply` mode for systemd timer integration.
+/// Used by the CLI `--fetch` mode and internal timer.
 pub async fn apply_wallpaper_headless(image_path: &str) -> Result<(), String> {
     apply_cosmic_wallpaper(image_path).await
 }
