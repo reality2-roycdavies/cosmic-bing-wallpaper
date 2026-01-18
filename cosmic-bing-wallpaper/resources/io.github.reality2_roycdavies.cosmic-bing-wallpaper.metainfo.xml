@@ -71,6 +71,18 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.3.3" date="2026-01-19">
+      <description>
+        <p>Flathub submission release:</p>
+        <ul>
+          <li>Fixed APP_ID to match icon name for proper taskbar display</li>
+          <li>Added screenshots for Flathub</li>
+          <li>Fixed stale lockfile issues after logout/login</li>
+          <li>Fixed Flatpak sandbox path issues for wallpaper application</li>
+          <li>Updated UI to match COSMIC design language</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.3" date="2026-01-17">
       <description>
         <p>Smart mode and Flatpak improvements:</p>
