@@ -383,4 +383,80 @@ A fourth session addressed component synchronization and visual polish. New insi
 
 ---
 
-*This retrospective was written by Claude as part of the same experimental process it analyzes. Updated after Part 4 session.*
+## Addendum: Part 5 Retrospective - Flatpak Polish & Lockfile Robustness
+
+A fifth session addressed UI conformance to COSMIC design language, critical Flatpak sandbox issues, and lockfile robustness. New insights emerged:
+
+### What Worked Well in Part 5
+
+#### 1. Applying COSMIC Design Language
+
+**What happened:** The settings UI was refactored to use proper COSMIC widgets: `settings::section()`, `settings::item()`, `settings::view_column()`, and `toggler()`.
+
+**Why it worked:** Following the established design patterns from COSMIC's own Settings app created a consistent user experience. The UI immediately looked more "native" and professional.
+
+#### 2. Systematic Debugging of Flatpak Path Issues
+
+**What happened:** Wallpaper application was failing silently in Flatpak because `dirs::config_dir()` returns the sandboxed path (`~/.var/app/APP_ID/config/`) rather than the host's config directory (`~/.config/`). COSMIC reads its background config from the host path.
+
+**Discovery process:**
+1. User reported wallpaper "flickers but reverts to COSMIC default"
+2. Added debug output to trace the config write path
+3. Discovered the sandboxed vs host path mismatch
+4. Found TWO separate `apply_cosmic_wallpaper` functions (one in service.rs, one in app.rs) - both needed fixing
+
+**Why it worked:** Systematic tracing through debug output revealed the root cause. The user's persistent testing uncovered that history wallpaper application also failed, revealing the duplicate function issue.
+
+#### 3. Identifying Stale Lockfile Pattern
+
+**What happened:** After logout/login, tray icons appeared but settings windows wouldn't open from the tray menu. Required a second logout/login cycle to fix.
+
+**Root cause:** The lockfile detection had a flawed fallback - when file metadata couldn't be read, it assumed "running" (`return true`). After logout, stale lockfiles remained, and in certain conditions the metadata check would fail, blocking new instances.
+
+**Fix:** Changed the fallback to assume "NOT running" (conservative approach) and added `cleanup_stale_lockfiles()` function called at startup to remove lockfiles older than 60 seconds.
+
+### What Didn't Work Well in Part 5
+
+#### 1. Duplicate Code Discovery Was Late
+
+**What happened:** There were TWO `apply_cosmic_wallpaper` functions - one synchronous in service.rs (used by tray), one asynchronous in app.rs (used by GUI). Only one was initially fixed.
+
+**Why it failed:** When fixing the sandboxed path issue, only service.rs was checked. The duplicate in app.rs wasn't discovered until the user reported that history wallpaper application still failed.
+
+**Lesson:** When fixing a bug, grep for the function name across the entire codebase to find all instances.
+
+#### 2. Manifest Case Sensitivity Mismatch
+
+**What happened:** The Flatpak manifest had `--filesystem=~/Pictures/bing-wallpapers:create` but the code used `~/Pictures/BingWallpapers` (different case).
+
+**Why it failed:** Linux filesystems are case-sensitive. The app couldn't access wallpapers because it didn't have permission to the actual directory it was using.
+
+**Lesson:** File paths in Flatpak manifests must exactly match what the code uses.
+
+### New Lessons from Part 5
+
+1. **Flatpak sandboxing changes familiar paths** — `dirs::config_dir()` and similar functions return sandboxed paths in Flatpak. When your app needs to communicate with other apps (like COSMIC), you must explicitly use host paths.
+
+2. **Stale lockfiles are session-crossing bugs** — Lockfiles work well within a session but can cause problems across logout/login cycles. Always include age-based cleanup at startup.
+
+3. **Conservative fallbacks are safer** — When detecting if another instance is running, "assume NOT running" is safer than "assume running". The latter blocks legitimate starts; the former might allow a brief duplicate (which is less harmful).
+
+4. **Duplicate code creates duplicate bugs** — When the same logic exists in multiple places, bugs must be fixed in all of them. Grep for function names after fixing.
+
+5. **Design language conformance matters** — Using the proper COSMIC widgets (settings sections, togglers) made the app feel native immediately. The effort to refactor was worth the improved user experience.
+
+### Updated Summary
+
+| Aspect | Assessment |
+|--------|------------|
+| **Speed** | ~12 hours across 5 sessions total |
+| **Code quality (initial)** | Good but not great — worked but had edge cases |
+| **Code quality (current)** | Much better — 20+ issues addressed across sessions |
+| **Architecture** | Embedded service — Flatpak-compatible, no systemd |
+| **UI conformance** | Excellent — follows COSMIC design language |
+| **Flatpak compatibility** | Solid — sandbox issues resolved |
+| **Robustness** | Improved — lockfile cleanup, path handling |
+
+---
+
+*This retrospective was written by Claude as part of the same experimental process it analyzes. Updated after Part 5 session.*
