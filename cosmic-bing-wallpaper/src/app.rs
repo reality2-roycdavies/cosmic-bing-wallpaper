@@ -48,7 +48,7 @@ use crate::service::is_flatpak;
 
 /// Unique application identifier for COSMIC.
 /// Used for window identification and desktop integration.
-pub const APP_ID: &str = "io.github.cosmic-bing-wallpaper";
+pub const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-bing-wallpaper";
 
 /// Main application state struct.
 ///
