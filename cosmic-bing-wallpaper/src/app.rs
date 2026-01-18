@@ -241,10 +241,12 @@ impl Application for BingWallpaper {
             pending_delete: None,
         };
 
-        // Trigger startup actions: optionally fetch today's image and check timer status
+        // Trigger startup actions: check timer status, and optionally fetch today's image
+        // Only auto-fetch if Daily Update is enabled - otherwise leave the wallpaper as-is
         let timer_task = Task::perform(async {}, |_| Action::App(Message::CheckTimerStatus));
 
-        if app.config.fetch_on_startup {
+        let timer_enabled = crate::timer::TimerState::load().enabled;
+        if timer_enabled && app.config.fetch_on_startup {
             let fetch_task = Task::perform(async {}, |_| Action::App(Message::FetchToday));
             (app, Task::batch([fetch_task, timer_task]))
         } else {
@@ -316,30 +318,35 @@ impl Application for BingWallpaper {
             }
 
             Message::DownloadedImage(result) => {
-                self.is_loading = false;
                 match result {
                     Ok(path) => {
-                        self.image_path = Some(path);
+                        self.image_path = Some(path.clone());
 
                         // Clean up old wallpapers based on keep_days setting
                         let deleted = cleanup_old_wallpapers(&self.config.wallpaper_dir, self.config.keep_days);
                         if deleted > 0 {
                             self.status_message = format!(
-                                "Image downloaded! ({} old wallpaper{} cleaned up). Click 'Apply' to set as wallpaper.",
-                                deleted,
-                                if deleted == 1 { "" } else { "s" }
+                                "Downloaded ({} old cleaned up). Applying...",
+                                deleted
                             );
                         } else {
-                            self.status_message = "Image downloaded! Click 'Apply' to set as wallpaper.".to_string();
+                            self.status_message = "Downloaded. Applying wallpaper...".to_string();
                         }
 
                         self.history = scan_history(&self.config.wallpaper_dir);
+
+                        // Auto-apply the wallpaper after downloading
+                        Task::perform(
+                            async move { apply_cosmic_wallpaper(&path).await },
+                            |result| Action::App(Message::AppliedWallpaper(result)),
+                        )
                     }
                     Err(e) => {
+                        self.is_loading = false;
                         self.status_message = format!("Error: {}", e);
+                        Task::none()
                     }
                 }
-                Task::none()
             }
 
             Message::ApplyWallpaper => {
@@ -378,12 +385,14 @@ impl Application for BingWallpaper {
 
             Message::ShowHistory => {
                 self.view_mode = ViewMode::History;
+                self.status_message = String::new(); // Clear status when switching views
                 self.history = scan_history(&self.config.wallpaper_dir);
                 Task::none()
             }
 
             Message::ShowMain => {
                 self.view_mode = ViewMode::Main;
+                self.status_message = "Ready".to_string(); // Reset status when returning
                 Task::none()
             }
 
@@ -491,6 +500,7 @@ impl Application for BingWallpaper {
 
 impl BingWallpaper {
     fn apply_wallpaper_from_path(&mut self, path: String) -> Task<Action<Message>> {
+        eprintln!("apply_wallpaper_from_path called with: {}", path);
         self.status_message = "Applying wallpaper...".to_string();
         self.is_loading = true;
 
@@ -502,78 +512,61 @@ impl BingWallpaper {
 
     fn view_main(&self) -> Element<'_, Message> {
         // Today's Wallpaper section - image preview in a card
-        let image_title = self.current_image.as_ref()
-            .map(|img| img.title.clone())
-            .unwrap_or_else(|| "No image loaded".to_string());
-
-        let image_copyright = self.current_image.as_ref()
-            .map(|img| img.copyright.clone())
-            .unwrap_or_default();
-
         let preview_content: Element<_> = if let Some(path) = &self.image_path {
-            widget::image(path)
-                .content_fit(ContentFit::Contain)
-                .height(Length::Fixed(280.0))
-                .width(Length::Fill)
-                .into()
+            container(
+                widget::image(path)
+                    .content_fit(ContentFit::Contain)
+                    .height(Length::Fixed(280.0))
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .into()
         } else {
-            container(text::body("Click 'Fetch' to download today's wallpaper"))
+            container(text::body("Click 'Fetch Today's Wallpaper' to get started"))
                 .padding(60)
                 .width(Length::Fill)
                 .center_x(Length::Fill)
                 .into()
         };
 
-        let preview_card = container(preview_content)
-            .width(Length::Fill)
-            .class(cosmic::theme::Container::Card);
+        let image_title = self.current_image.as_ref()
+            .map(|img| img.title.clone())
+            .unwrap_or_else(|| "—".to_string());
+
+        let image_copyright = self.current_image.as_ref()
+            .map(|img| img.copyright.clone())
+            .unwrap_or_else(|| "—".to_string());
+
+        // Page title (large, like COSMIC Settings)
+        let page_title = text::title1("Bing Daily Wallpaper");
 
         let wallpaper_section = settings::section()
             .title("Today's Wallpaper")
-            .add(preview_card)
             .add(
-                settings::item(
-                    "Title",
-                    text::body(image_title),
-                )
+                container(preview_content)
+                    .width(Length::Fill)
+                    .padding(12)
+                    .class(cosmic::theme::Container::Card)
             )
             .add(
-                settings::item(
-                    "Copyright",
-                    text::caption(image_copyright),
-                )
+                row()
+                    .spacing(16)
+                    .push(text::body("Title"))
+                    .push(cosmic::widget::horizontal_space())
+                    .push(text::body(image_title))
+            )
+            .add(
+                row()
+                    .spacing(16)
+                    .push(text::body("Copyright"))
+                    .push(cosmic::widget::horizontal_space())
+                    .push(text::caption(image_copyright))
             )
             .add(
                 settings::item(
                     "Status",
                     text::caption(self.status_message.clone()),
                 )
-            );
-
-        // Actions section
-        let fetch_btn = button::standard("Fetch")
-            .on_press_maybe(if self.is_loading { None } else { Some(Message::FetchToday) });
-
-        let apply_btn = button::suggested("Apply")
-            .on_press_maybe(
-                if self.is_loading || self.image_path.is_none() {
-                    None
-                } else {
-                    Some(Message::ApplyWallpaper)
-                }
-            );
-
-        let history_btn = button::standard("History")
-            .on_press(Message::ShowHistory);
-
-        let actions_section = settings::section()
-            .title("Actions")
-            .add(
-                settings::item_row(vec![
-                    fetch_btn.into(),
-                    apply_btn.into(),
-                    history_btn.into(),
-                ])
             );
 
         // Settings section
@@ -614,18 +607,38 @@ impl BingWallpaper {
                 )
             );
 
+        // Actions section - below settings
+        let fetch_btn = button::suggested("Fetch Today's Wallpaper")
+            .on_press_maybe(if self.is_loading { None } else { Some(Message::FetchToday) });
+
+        let history_btn = button::standard("History")
+            .on_press(Message::ShowHistory);
+
+        let actions_section = settings::section()
+            .title("Actions")
+            .add(
+                settings::item_row(vec![
+                    fetch_btn.into(),
+                    history_btn.into(),
+                ])
+            );
+
         // Main content using settings::view_column for proper COSMIC styling
         let content = settings::view_column(vec![
+            page_title.into(),
             wallpaper_section.into(),
-            actions_section.into(),
             settings_section.into(),
+            actions_section.into(),
         ]);
 
         widget::scrollable(
-            container(content)
-                .width(Length::Fill)
-                .max_width(800)
-                .padding(16)
+            container(
+                container(content)
+                    .max_width(800)
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .padding(16)
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -640,7 +653,7 @@ impl BingWallpaper {
                 button::icon(widget::icon::from_name("go-previous-symbolic"))
                     .on_press(Message::ShowMain)
             )
-            .push(text::title1("Downloaded Wallpapers"))
+            .push(text::title3("Downloaded Wallpapers"))
             .push(cosmic::widget::horizontal_space())
             .push(
                 button::icon(widget::icon::from_name("view-refresh-symbolic"))
@@ -987,10 +1000,14 @@ async fn spawn_host_command(cmd: &str) -> std::io::Result<tokio::process::Child>
 }
 
 async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
-    // Determine config path for COSMIC background
-    let config_path = dirs::config_dir()
-        .ok_or("Could not find config directory")?
-        .join("cosmic/com.system76.CosmicBackground/v1/all");
+    // Use host's config directory, not Flatpak's sandboxed one
+    // In Flatpak, dirs::config_dir() returns ~/.var/app/APP_ID/config/
+    // but COSMIC reads from ~/.config/
+    eprintln!("apply_cosmic_wallpaper called with path: {}", image_path);
+    let config_path = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
+    eprintln!("Writing to config path: {:?}", config_path);
 
     // Build RON configuration for cosmic-bg
     let config_content = format!(

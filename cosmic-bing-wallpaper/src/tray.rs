@@ -351,13 +351,18 @@ async fn run_tray_async() -> Result<(), String> {
             // Timer fired - fetch and apply wallpaper
             println!("Timer fired - fetching wallpaper...");
 
-            let (market, wallpaper_dir) = {
-                let state = state_for_timer.read().await;
-                (
-                    state.config.market.clone(),
-                    state.config.wallpaper_dir.clone(),
-                )
-            };
+            // Reload config from disk to get latest settings (GUI may have changed them)
+            let fresh_config = crate::config::Config::load();
+            let (market, wallpaper_dir) = (
+                fresh_config.market.clone(),
+                fresh_config.wallpaper_dir.clone(),
+            );
+
+            // Update state with fresh config
+            {
+                let mut state = state_for_timer.write().await;
+                state.config = fresh_config;
+            }
 
             // Fetch and apply
             match crate::bing::fetch_bing_image_info(&market).await {
@@ -408,10 +413,18 @@ async fn run_tray_async() -> Result<(), String> {
                     // Spawn fetch task
                     let state_clone = state.clone();
                     tokio::spawn(async move {
-                        let (market, wallpaper_dir) = {
-                            let state = state_clone.read().await;
-                            (state.config.market.clone(), state.config.wallpaper_dir.clone())
-                        };
+                        // Reload config from disk to get latest settings
+                        let fresh_config = crate::config::Config::load();
+                        let (market, wallpaper_dir) = (
+                            fresh_config.market.clone(),
+                            fresh_config.wallpaper_dir.clone(),
+                        );
+
+                        // Update state with fresh config
+                        {
+                            let mut state = state_clone.write().await;
+                            state.config = fresh_config;
+                        }
 
                         match crate::bing::fetch_bing_image_info(&market).await {
                             Ok(image) => {

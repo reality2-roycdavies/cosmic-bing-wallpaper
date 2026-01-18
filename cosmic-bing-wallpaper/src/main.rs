@@ -87,8 +87,9 @@ fn is_tray_running() -> bool {
                 return elapsed.as_secs() < 60;
             }
         }
-        // If we can't check time, assume running if file exists
-        return true;
+        // If we can't check time, assume NOT running (conservative approach)
+        // This prevents stale lockfiles from blocking new instances after quit/restart
+        return false;
     }
     false
 }
@@ -116,12 +117,46 @@ fn is_gui_running() -> bool {
     if let Ok(metadata) = fs::metadata(&lockfile) {
         if let Ok(modified) = metadata.modified() {
             if let Ok(elapsed) = modified.elapsed() {
+                // Only consider running if lockfile was touched in last 60 seconds
                 return elapsed.as_secs() < 60;
             }
         }
-        return true;
+        // If we can't check time, assume NOT running (conservative approach)
+        // This prevents stale lockfiles from blocking new instances after logout/login
+        return false;
     }
     false
+}
+
+/// Clean up stale lockfiles from previous sessions
+/// Called at startup to prevent orphaned lockfiles from blocking new instances
+pub fn cleanup_stale_lockfiles() {
+    // Clean up stale GUI lockfile
+    let gui_lockfile = gui_lockfile_path();
+    cleanup_single_lockfile(&gui_lockfile, "GUI");
+
+    // Clean up stale tray lockfile
+    let tray_lockfile = tray_lockfile_path();
+    cleanup_single_lockfile(&tray_lockfile, "tray");
+}
+
+/// Helper to clean up a single stale lockfile
+fn cleanup_single_lockfile(lockfile: &std::path::Path, name: &str) {
+    if let Ok(metadata) = fs::metadata(lockfile) {
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(elapsed) = modified.elapsed() {
+                // If lockfile is older than 60 seconds, it's from a dead process
+                if elapsed.as_secs() >= 60 {
+                    let _ = fs::remove_file(lockfile);
+                    eprintln!("Cleaned up stale {} lockfile", name);
+                }
+            }
+        } else {
+            // Can't check modification time - remove it to be safe
+            let _ = fs::remove_file(lockfile);
+            eprintln!("Removed {} lockfile with unreadable metadata", name);
+        }
+    }
 }
 
 /// Create a lockfile to indicate the GUI is running
@@ -198,6 +233,9 @@ fn main() -> cosmic::iced::Result {
     if args.len() > 1 {
         match args[1].as_str() {
             "--tray" | "-t" => {
+                // Clean up any stale lockfiles from previous sessions
+                cleanup_stale_lockfiles();
+
                 // Check if tray is already running
                 if is_tray_running() {
                     println!("Bing Wallpaper tray is already running.");
@@ -232,6 +270,9 @@ fn main() -> cosmic::iced::Result {
     }
 
     // Default: Smart mode - start tray if not running, then launch GUI
+    // Clean up any stale lockfiles from previous sessions first
+    cleanup_stale_lockfiles();
+
     if is_gui_running() {
         println!("Bing Wallpaper is already open.");
         return Ok(());

@@ -407,9 +407,12 @@ fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
 
 /// Apply wallpaper to COSMIC desktop
 pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
-    let config_path = dirs::config_dir()
-        .ok_or("Could not find config directory")?
-        .join("cosmic/com.system76.CosmicBackground/v1/all");
+    // Use host's config directory, not Flatpak's sandboxed one
+    // In Flatpak, dirs::config_dir() returns ~/.var/app/APP_ID/config/
+    // but COSMIC reads from ~/.config/
+    let config_path = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
 
     let config_content = format!(
         r#"(
@@ -429,23 +432,42 @@ pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
             .map_err(|e| format!("Failed to create config dir: {}", e))?;
     }
 
-    std::fs::write(&config_path, config_content)
+    // Debug: print the path we're writing to
+    eprintln!("Writing wallpaper config to: {:?}", config_path);
+    eprintln!("Config content:\n{}", config_content);
+
+    std::fs::write(&config_path, &config_content)
         .map_err(|e| format!("Failed to write config: {}", e))?;
 
-    // Kill and restart cosmic-bg using host commands in Flatpak
-    let _ = run_host_command("pkill", &["-x", "cosmic-bg"]);
+    // Verify the write
+    let verify = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to verify config: {}", e))?;
+    eprintln!("Verified config file contains:\n{}", verify);
 
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Kill cosmic-bg - COSMIC will auto-restart it with new config
+    // Using SIGTERM for clean shutdown
+    eprintln!("Killing cosmic-bg...");
+    let kill_result = run_host_command("pkill", &["-TERM", "-x", "cosmic-bg"]);
+    eprintln!("Kill result: {:?}", kill_result.map(|o| o.status));
 
-    spawn_host_command("cosmic-bg")
-        .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
+    // Wait for COSMIC to restart cosmic-bg
+    std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    std::thread::sleep(std::time::Duration::from_millis(300));
-
+    // Check if cosmic-bg is running
     let check = run_host_command("pgrep", &["-x", "cosmic-bg"]);
+    eprintln!("pgrep result: {:?}", check.as_ref().map(|o| String::from_utf8_lossy(&o.stdout).to_string()));
 
     match check {
-        Ok(output) if output.status.success() => Ok(()),
-        _ => Err("cosmic-bg failed to start".to_string())
+        Ok(output) if output.status.success() => {
+            eprintln!("cosmic-bg is running");
+            Ok(())
+        },
+        _ => {
+            eprintln!("cosmic-bg not running, trying to start manually...");
+            spawn_host_command("cosmic-bg")
+                .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            Ok(())
+        }
     }
 }

@@ -20,7 +20,7 @@ finish-args:
   - --filesystem=~/.config/cosmic:rw
   # App config, timer state, and wallpaper storage
   - --filesystem=~/.config/cosmic-bing-wallpaper:create
-  - --filesystem=~/Pictures/bing-wallpapers:create
+  - --filesystem=~/Pictures/BingWallpapers:create
   # Autostart entry
   - --filesystem=~/.config/autostart:create
 
