@@ -337,13 +337,14 @@ fn rand_delay() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Timelike;
 
     #[test]
     fn test_calculate_next_run() {
         let next = calculate_next_run();
         let now = Local::now();
 
-        // Next run should be in the future
+        // Next run should be in the future or at scheduled hour
         assert!(next > now || next.hour() == SCHEDULED_HOUR);
     }
 

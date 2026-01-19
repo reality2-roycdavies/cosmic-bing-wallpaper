@@ -138,8 +138,6 @@ pub enum Message {
     DownloadedImage(Result<String, String>),
 
     // === Wallpaper Application ===
-    /// User clicked "Apply as Wallpaper" for today's image
-    ApplyWallpaper,
     /// User clicked "Apply" on a history item
     ApplyHistoryWallpaper(PathBuf),
     /// Wallpaper application completed
@@ -349,14 +347,6 @@ impl Application for BingWallpaper {
                 }
             }
 
-            Message::ApplyWallpaper => {
-                if let Some(path) = &self.image_path {
-                    self.apply_wallpaper_from_path(path.clone())
-                } else {
-                    Task::none()
-                }
-            }
-
             Message::ApplyHistoryWallpaper(path) => {
                 self.apply_wallpaper_from_path(path.to_string_lossy().to_string())
             }
@@ -500,7 +490,6 @@ impl Application for BingWallpaper {
 
 impl BingWallpaper {
     fn apply_wallpaper_from_path(&mut self, path: String) -> Task<Action<Message>> {
-        eprintln!("apply_wallpaper_from_path called with: {}", path);
         self.status_message = "Applying wallpaper...".to_string();
         self.is_loading = true;
 
@@ -1003,11 +992,9 @@ async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     // Use host's config directory, not Flatpak's sandboxed one
     // In Flatpak, dirs::config_dir() returns ~/.var/app/APP_ID/config/
     // but COSMIC reads from ~/.config/
-    eprintln!("apply_cosmic_wallpaper called with path: {}", image_path);
     let config_path = dirs::home_dir()
         .ok_or("Could not find home directory")?
         .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
-    eprintln!("Writing to config path: {:?}", config_path);
 
     // Build RON configuration for cosmic-bg
     let config_content = format!(

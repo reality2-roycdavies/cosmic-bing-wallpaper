@@ -432,38 +432,20 @@ pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
             .map_err(|e| format!("Failed to create config dir: {}", e))?;
     }
 
-    // Debug: print the path we're writing to
-    eprintln!("Writing wallpaper config to: {:?}", config_path);
-    eprintln!("Config content:\n{}", config_content);
-
     std::fs::write(&config_path, &config_content)
         .map_err(|e| format!("Failed to write config: {}", e))?;
 
-    // Verify the write
-    let verify = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to verify config: {}", e))?;
-    eprintln!("Verified config file contains:\n{}", verify);
-
     // Kill cosmic-bg - COSMIC will auto-restart it with new config
-    // Using SIGTERM for clean shutdown
-    eprintln!("Killing cosmic-bg...");
-    let kill_result = run_host_command("pkill", &["-TERM", "-x", "cosmic-bg"]);
-    eprintln!("Kill result: {:?}", kill_result.map(|o| o.status));
+    let _ = run_host_command("pkill", &["-TERM", "-x", "cosmic-bg"]);
 
     // Wait for COSMIC to restart cosmic-bg
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    // Check if cosmic-bg is running
+    // Check if cosmic-bg is running, start manually if not
     let check = run_host_command("pgrep", &["-x", "cosmic-bg"]);
-    eprintln!("pgrep result: {:?}", check.as_ref().map(|o| String::from_utf8_lossy(&o.stdout).to_string()));
-
     match check {
-        Ok(output) if output.status.success() => {
-            eprintln!("cosmic-bg is running");
-            Ok(())
-        },
+        Ok(output) if output.status.success() => Ok(()),
         _ => {
-            eprintln!("cosmic-bg not running, trying to start manually...");
             spawn_host_command("cosmic-bg")
                 .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
             std::thread::sleep(std::time::Duration::from_millis(500));
