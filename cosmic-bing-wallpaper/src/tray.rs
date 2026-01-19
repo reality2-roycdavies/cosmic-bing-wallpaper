@@ -117,7 +117,7 @@ impl BingWallpaperTray {
 
 impl Tray for BingWallpaperTray {
     fn id(&self) -> String {
-        "io.github.cosmic-bing-wallpaper".to_string()
+        "io.github.reality2_roycdavies.cosmic-bing-wallpaper".to_string()
     }
 
     fn icon_theme_path(&self) -> String {
