@@ -187,11 +187,9 @@ This project includes both a simple shell script for quick use and a full native
 
 *Browse and re-apply previously downloaded wallpapers.*
 
-## Quick Start
+## Installation
 
-### Option 1: Flatpak from GitHub (Recommended)
-
-Build and install the Flatpak package directly from GitHub:
+Build and install the Flatpak package from GitHub:
 
 ```bash
 # Install flatpak-builder if not already installed
@@ -202,165 +200,21 @@ sudo pacman -S flatpak-builder    # Arch/Manjaro
 git clone https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
 cd cosmic-bing-wallpaper
 
-# Build and install the Flatpak (first build takes a while)
+# Build and install the Flatpak (first build downloads dependencies)
 flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
 
-# Run
+# Run the app
 flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper
-```
 
-**Start the tray on login:**
-```bash
+# Or start the tray (will auto-start on future logins)
 flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
 ```
-The app automatically creates an XDG autostart entry, so the tray will start on login.
 
-**Install from Flathub** (when/if available):
-```bash
-flatpak install flathub io.github.reality2_roycdavies.cosmic-bing-wallpaper
-```
-
-### Option 2: AppImage
-
-Download the latest AppImage from the [Releases](../../releases) page:
+### Uninstalling
 
 ```bash
-# Download the AppImage and installer
-wget https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/releases/latest/download/cosmic-bing-wallpaper-x86_64.AppImage
-wget https://github.com/reality2-roycdavies/cosmic-bing-wallpaper/releases/latest/download/install-appimage.sh
-
-# Run the installer (integrates with app launcher)
-chmod +x install-appimage.sh
-./install-appimage.sh cosmic-bing-wallpaper-x86_64.AppImage
+flatpak uninstall io.github.reality2_roycdavies.cosmic-bing-wallpaper
 ```
-
-The installer will:
-- Create `~/Apps` directory if needed
-- Copy the AppImage there
-- Extract and install the icons
-- Create a `.desktop` file so it appears in your application launcher
-
-**Install with system tray autostart:**
-```bash
-./install-appimage.sh --with-tray cosmic-bing-wallpaper-x86_64.AppImage
-```
-
-**Or run directly without installing:**
-```bash
-chmod +x cosmic-bing-wallpaper-x86_64.AppImage
-./cosmic-bing-wallpaper-x86_64.AppImage
-```
-
-### Option 3: Native Build from Source
-
-#### Prerequisites
-
-**COSMIC Desktop**: This app requires the COSMIC desktop environment (Pop!_OS 24.04+ or another COSMIC-enabled distribution).
-
-**Build Dependencies** (Pop!_OS/Ubuntu/Debian):
-```bash
-sudo apt update
-sudo apt install -y \
-    build-essential \
-    cargo \
-    cmake \
-    git \
-    just \
-    libdbus-1-dev \
-    libexpat1-dev \
-    libfontconfig-dev \
-    libfreetype-dev \
-    libxkbcommon-dev \
-    pkg-config
-```
-
-**Build Dependencies** (Fedora):
-```bash
-sudo dnf install -y \
-    cargo \
-    cmake \
-    dbus-devel \
-    expat-devel \
-    fontconfig-devel \
-    freetype-devel \
-    gcc \
-    git \
-    just \
-    libxkbcommon-devel \
-    pkg-config
-```
-
-**Build Dependencies** (Arch Linux):
-```bash
-sudo pacman -S --needed \
-    base-devel \
-    cargo \
-    cmake \
-    dbus \
-    expat \
-    fontconfig \
-    freetype2 \
-    git \
-    just \
-    libxkbcommon \
-    pkg-config
-```
-
-#### Clone and Build
-
-```bash
-# Clone the repository
-git clone https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-cd cosmic-bing-wallpaper/cosmic-bing-wallpaper
-
-# Build release version
-cargo build --release
-
-# Run the application
-./target/release/cosmic-bing-wallpaper
-```
-
-#### Install and Run
-
-```bash
-# Install to ~/.local/bin with icons and desktop entry
-just install-local
-
-# Install with system tray autostart and daily timer
-just install-with-tray
-
-# Uninstall
-just uninstall-local        # Remove app only
-just uninstall-with-tray    # Remove app and all services
-```
-
-#### Other Just Commands
-
-```bash
-just build-release    # Build optimised binary
-just build-debug      # Build debug binary
-just run-release      # Build and run (release)
-just run              # Build and run (debug)
-just check            # Run clippy lints
-just fmt              # Format code
-just clean            # Remove build artifacts
-```
-
-### Option 4: Shell Script Only
-
-If you just want a simple script without the GUI:
-
-```bash
-# Clone or download the script
-git clone https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-cd cosmic-bing-wallpaper
-
-# Make executable and run
-chmod +x bing-wallpaper.sh
-./bing-wallpaper.sh
-```
-
-Edit the script to change your preferred region (default is `en-US`).
 
 ## Automatic Daily Updates
 
@@ -377,11 +231,7 @@ The timer runs within the tray process - no systemd services required. This make
 Run the app in the background with a system tray icon for quick access:
 
 ```bash
-# From installed binary
-cosmic-bing-wallpaper --tray
-
-# Or from AppImage
-./cosmic-bing-wallpaper-x86_64.AppImage --tray
+flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
 ```
 
 The tray icon provides a right-click menu with:
@@ -390,33 +240,14 @@ The tray icon provides a right-click menu with:
 - **Settings**: Launch the full GUI window
 - **Quit**: Exit the tray application
 
-### Auto-start Tray on Login
-
-The tray automatically creates an XDG autostart entry (`~/.config/autostart/`) on first run, so it will start on login without manual setup.
-
-**Using just (for source builds):**
-```bash
-just install-with-tray
-```
-
-**Using Flatpak:**
-```bash
-flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
-```
-The Flatpak version also auto-creates its autostart entry.
+The tray automatically creates an XDG autostart entry on first run, so it will start on login.
 
 ## Configuration
 
-### GUI App
 Configuration is stored at `~/.config/cosmic-bing-wallpaper/config.json`:
 - **Wallpaper directory**: Where images are saved (default: `~/Pictures/BingWallpapers/`)
 - **Market**: Which regional Bing market to use
 - **Auto-update**: Whether the timer is enabled
-
-### Shell Script
-Edit the variables at the top of `bing-wallpaper.sh`:
-- `WALLPAPER_DIR`: Where to save images
-- `MARKET`: Bing region code (e.g., `en-US`, `de-DE`, `ja-JP`)
 
 ## Supported Regions
 
@@ -440,13 +271,9 @@ Edit the variables at the top of `bing-wallpaper.sh`:
 cosmic-bing-wallpaper/
 ├── README.md                          # This file
 ├── LICENSE                            # MIT License
-├── bing-wallpaper.sh                  # Standalone shell script
+├── flathub/                           # Flatpak manifest for building
 └── cosmic-bing-wallpaper/             # COSMIC GUI application
     ├── Cargo.toml                     # Rust dependencies
-    ├── CHANGELOG.md                   # Version history
-    ├── DEVELOPMENT.md                 # Technical learnings & solutions
-    ├── justfile                       # Build automation
-    ├── install.sh                     # Installation script
     ├── src/
     │   ├── main.rs                    # Entry point (GUI/Tray modes)
     │   ├── app.rs                     # COSMIC app (UI + state)
@@ -456,22 +283,11 @@ cosmic-bing-wallpaper/
     │   ├── timer.rs                   # Internal timer for daily updates
     │   ├── dbus_client.rs             # D-Bus client proxy (for GUI)
     │   └── tray.rs                    # System tray with embedded service
-    ├── resources/
-    │   ├── *.desktop                  # Desktop entry file
-    │   ├── *.svg                      # Application icons
-    │   ├── icon-on.png                # Tray icon (timer enabled, dark)
-    │   ├── icon-off.png               # Tray icon (timer disabled, dark)
-    │   ├── icon-on-light.png          # Tray icon (timer enabled, light)
-    │   ├── icon-off-light.png         # Tray icon (timer disabled, light)
-    │   └── *.appdata.xml              # AppStream metadata
-    ├── systemd/
-    │   ├── cosmic-bing-wallpaper.service
-    │   ├── cosmic-bing-wallpaper.timer
-    │   ├── install-timer.sh
-    │   └── uninstall-timer.sh
-    ├── appimage/
-    │   └── build-appimage.sh          # AppImage build script
-    └── i18n/                          # Internationalization files
+    └── resources/
+        ├── *.desktop                  # Desktop entry file
+        ├── *.svg                      # Application icons
+        ├── *.metainfo.xml             # AppStream metadata
+        └── icon-*.png                 # Tray icons (theme variants)
 ```
 
 ## How It Works
@@ -491,15 +307,6 @@ Wallpapers are applied by:
 1. Writing configuration to `~/.config/cosmic/com.system76.CosmicBackground/v1/all`
 2. Using COSMIC's RON (Rusty Object Notation) format
 3. Restarting the `cosmic-bg` process to load the new wallpaper
-
-## Building an AppImage
-
-```bash
-cd cosmic-bing-wallpaper/cosmic-bing-wallpaper/appimage
-./build-appimage.sh
-```
-
-The AppImage will be created in `appimage/build/`.
 
 ## Development
 
@@ -576,15 +383,6 @@ The GUI follows the Model-View-Update (MVU) pattern:
 - **Embedded pixmaps**: Icons embedded in binary via `include_bytes!()` for reliable display
 - **Colored indicators** (v0.1.5): Green tick (timer ON) / red cross (timer OFF) for visibility at all sizes
 - **External state sync**: Detects timer changes made by GUI and updates icon accordingly
-
-### Build Commands
-```bash
-just build-release    # Build optimized binary
-just install-local    # Install to ~/.local/bin
-just run-release      # Build and run
-just check            # Run clippy lints
-just fmt              # Format code
-```
 
 ### Technical Documentation
 
