@@ -189,7 +189,38 @@ This project includes both a simple shell script for quick use and a full native
 
 ## Quick Start
 
-### Option 1: AppImage (Easiest)
+### Option 1: Flatpak from GitHub (Recommended)
+
+Build and install the Flatpak package directly from GitHub:
+
+```bash
+# Install flatpak-builder if not already installed
+sudo apt install flatpak-builder  # Debian/Ubuntu/Pop!_OS
+sudo pacman -S flatpak-builder    # Arch/Manjaro
+
+# Clone the repository
+git clone https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
+cd cosmic-bing-wallpaper
+
+# Build and install the Flatpak (first build takes a while)
+flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
+
+# Run
+flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper
+```
+
+**Start the tray on login:**
+```bash
+flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
+```
+The app automatically creates an XDG autostart entry, so the tray will start on login.
+
+**Install from Flathub** (when/if available):
+```bash
+flatpak install flathub io.github.reality2_roycdavies.cosmic-bing-wallpaper
+```
+
+### Option 2: AppImage
 
 Download the latest AppImage from the [Releases](../../releases) page:
 
@@ -214,15 +245,13 @@ The installer will:
 ./install-appimage.sh --with-tray cosmic-bing-wallpaper-x86_64.AppImage
 ```
 
-This also sets up the tray icon to start automatically on login.
-
 **Or run directly without installing:**
 ```bash
 chmod +x cosmic-bing-wallpaper-x86_64.AppImage
 ./cosmic-bing-wallpaper-x86_64.AppImage
 ```
 
-### Option 2: Build from Source
+### Option 3: Native Build from Source
 
 #### Prerequisites
 
@@ -317,7 +346,7 @@ just fmt              # Format code
 just clean            # Remove build artifacts
 ```
 
-### Option 3: Shell Script Only
+### Option 4: Shell Script Only
 
 If you just want a simple script without the GUI:
 
