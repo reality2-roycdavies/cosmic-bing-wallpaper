@@ -4,7 +4,7 @@
   <name>Bing Wallpaper</name>
   <summary>Bing Daily Wallpaper for COSMIC Desktop</summary>
   <metadata_license>MIT</metadata_license>
-  <project_license>MPL-2.0</project_license>
+  <project_license>MIT</project_license>
   <developer id="io.github.reality2_roycdavies">
     <name>Roy C. Davies</name>
   </developer>
@@ -24,7 +24,7 @@
       <li>Browse and apply previously downloaded wallpapers</li>
       <li>Choose from 20+ regional Bing markets</li>
       <li>System tray integration with quick controls</li>
-      <li>Automatic daily updates via systemd timer</li>
+      <li>Automatic daily updates via internal timer</li>
       <li>Dark/light theme adaptation</li>
       <li>Lightweight and native - built with libcosmic</li>
     </ul>

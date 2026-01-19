@@ -179,9 +179,13 @@ This project includes both a simple shell script for quick use and a full native
 
 ## Screenshots
 
-![Main Window](screenshots/main-window.png)
+![Main Window](screenshots/main.png)
 
 *Main application window showing today's Bing image, region selector, and auto-update timer controls.*
+
+![History Browser](screenshots/history.png)
+
+*Browse and re-apply previously downloaded wallpapers.*
 
 ## Quick Start
 

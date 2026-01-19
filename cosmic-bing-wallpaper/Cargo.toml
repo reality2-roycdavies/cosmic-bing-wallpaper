@@ -3,7 +3,7 @@ name = "cosmic-bing-wallpaper"
 version = "0.3.2"
 edition = "2021"
 authors = ["Roy C. Davies"]
-license = "MPL-2.0"
+license = "MIT"
 description = "Bing Daily Wallpaper manager for COSMIC desktop"
 
 [dependencies]

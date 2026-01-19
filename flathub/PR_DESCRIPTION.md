@@ -4,7 +4,7 @@
 
 **Name:** Bing Wallpaper
 **Summary:** Bing Daily Wallpaper for COSMIC Desktop
-**License:** MPL-2.0
+**License:** MIT
 **Homepage:** https://github.com/reality2-roycdavies/cosmic-bing-wallpaper
 
 ## Description
@@ -48,7 +48,7 @@ This application was built specifically for the COSMIC desktop environment using
 - [x] Icon is included (SVG)
 - [x] Screenshots are included
 - [x] OARS content rating is set
-- [x] License is open source (MPL-2.0)
+- [x] License is open source (MIT)
 
 ## Screenshots
 
