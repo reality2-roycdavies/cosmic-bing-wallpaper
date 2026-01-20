@@ -64,6 +64,10 @@ trait WallpaperService {
     /// Get the next scheduled timer run time
     async fn get_timer_next_run(&self) -> zbus::Result<String>;
 
+    /// Get the current wallpaper path (if any has been fetched this session)
+    /// Returns empty string if no wallpaper has been fetched yet
+    async fn get_current_wallpaper_path(&self) -> zbus::Result<String>;
+
     /// Get list of downloaded wallpapers
     async fn get_history(&self) -> zbus::Result<Vec<WallpaperInfo>>;
 
@@ -163,6 +167,12 @@ impl WallpaperClient {
     /// Returns empty string if timer is not active
     pub async fn get_timer_next_run(&self) -> zbus::Result<String> {
         self.proxy.get_timer_next_run().await
+    }
+
+    /// Get the current wallpaper path (if any has been fetched this session)
+    /// Returns empty string if no wallpaper has been fetched yet
+    pub async fn get_current_wallpaper_path(&self) -> zbus::Result<String> {
+        self.proxy.get_current_wallpaper_path().await
     }
 
     /// Get list of downloaded wallpapers

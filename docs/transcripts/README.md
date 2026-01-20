@@ -42,6 +42,16 @@ This session covers major architectural refactoring and visual improvements:
 - **Colored Status Indicators**: Green tick (ON) / red cross (OFF) for visibility at small sizes
 - **External AI Collaboration**: Gemini suggested the pixmap approach when Claude was stuck
 
+### Part 6: Cross-Distribution Flatpak Debugging
+- **`CONVERSATION-PART6-FLATPAK.md`** - Readable Markdown version
+
+This session covers Flatpak compatibility testing on Pop!_OS after development on Manjaro:
+- **SDK Extension Versioning**: Runtime version mismatches require matching SDK extensions
+- **Sandbox Path Isolation**: Standard dir functions return sandboxed paths, not host paths
+- **Incremental Permission Discovery**: D-Bus ownership, GPU access, Flatpak portal access
+- **GUI-Tray State Synchronization**: Added D-Bus method for component startup sync
+- **ksni Left-Click Handling**: Library defaults vs platform user expectations
+
 ## Format Notes
 
 ### JSONL Files

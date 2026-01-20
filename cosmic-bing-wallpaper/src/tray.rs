@@ -116,6 +116,9 @@ impl BingWallpaperTray {
 }
 
 impl Tray for BingWallpaperTray {
+    // Show menu on left-click (same as right-click)
+    const MENU_ON_ACTIVATE: bool = true;
+
     fn id(&self) -> String {
         "io.github.reality2_roycdavies.cosmic-bing-wallpaper".to_string()
     }

@@ -172,6 +172,12 @@ pub enum Message {
     UninstallTimer,
     /// Timer removal completed
     TimerUninstalled(Result<(), String>),
+
+    // === State Sync ===
+    /// Sync current wallpaper state from D-Bus service (if tray already fetched)
+    SyncCurrentWallpaper,
+    /// Current wallpaper state received from service
+    CurrentWallpaperSynced(Option<String>),
 }
 
 /// Implementation of the COSMIC Application trait.
@@ -239,16 +245,16 @@ impl Application for BingWallpaper {
             pending_delete: None,
         };
 
-        // Trigger startup actions: check timer status, and optionally fetch today's image
-        // Only auto-fetch if Daily Update is enabled - otherwise leave the wallpaper as-is
+        // Trigger startup actions: check timer status, sync current wallpaper from tray, and optionally fetch
         let timer_task = Task::perform(async {}, |_| Action::App(Message::CheckTimerStatus));
+        let sync_task = Task::perform(async {}, |_| Action::App(Message::SyncCurrentWallpaper));
 
         let timer_enabled = crate::timer::TimerState::load().enabled;
         if timer_enabled && app.config.fetch_on_startup {
             let fetch_task = Task::perform(async {}, |_| Action::App(Message::FetchToday));
-            (app, Task::batch([fetch_task, timer_task]))
+            (app, Task::batch([sync_task, fetch_task, timer_task]))
         } else {
-            (app, timer_task)
+            (app, Task::batch([sync_task, timer_task]))
         }
     }
 
@@ -483,6 +489,34 @@ impl Application for BingWallpaper {
                     async { check_timer_status().await },
                     |status| Action::App(Message::TimerStatusChecked(status)),
                 )
+            }
+
+            Message::SyncCurrentWallpaper => {
+                // Query the D-Bus service for the current wallpaper (in case tray already fetched)
+                Task::perform(
+                    async {
+                        match crate::dbus_client::WallpaperClient::connect().await {
+                            Ok(client) => {
+                                match client.get_current_wallpaper_path().await {
+                                    Ok(path) if !path.is_empty() => Some(path),
+                                    _ => None,
+                                }
+                            }
+                            Err(_) => None,
+                        }
+                    },
+                    |path| Action::App(Message::CurrentWallpaperSynced(path)),
+                )
+            }
+
+            Message::CurrentWallpaperSynced(path) => {
+                if let Some(p) = path {
+                    // Only update if we don't already have an image loaded
+                    if self.image_path.is_none() {
+                        self.image_path = Some(p);
+                    }
+                }
+                Task::none()
             }
         }
     }

@@ -28,3 +28,7 @@ target/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Flatpak build artifacts
+.flatpak-builder/
+flathub/.flatpak-builder/
