@@ -202,11 +202,15 @@ Build and install the Flatpak package from GitHub:
 sudo apt install flatpak-builder  # Debian/Ubuntu/Pop!_OS
 sudo pacman -S flatpak-builder    # Arch/Manjaro
 
+# Install required Flatpak SDK (if not already installed)
+flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
+
 # Clone the repository
 git clone https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
 cd cosmic-bing-wallpaper
 
-# Build and install the Flatpak (first build downloads dependencies)
+# Build and install the Flatpak (first build takes a while)
 flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
 
 # Run the app
