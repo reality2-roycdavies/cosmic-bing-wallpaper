@@ -153,89 +153,89 @@ impl Tray for BingWallpaperTray {
 
 **Challenge:** COSMIC uses Wayland, which doesn't have a native tray protocol. The ksni crate uses D-Bus StatusNotifierItem protocol, which COSMIC supports.
 
-### Phase 4: Autostart Issues (v0.1.2)
+### Phase 4: Autostart (v0.1.2 → v0.3.0)
 
-**Problem:** XDG autostart (`~/.config/autostart/*.desktop`) didn't work on COSMIC.
+**Original problem:** XDG autostart (`~/.config/autostart/*.desktop`) didn't work on early COSMIC builds.
 
-**Root cause:** COSMIC manages its session via systemd, not traditional XDG autostart.
+**Initial solution:** Used systemd user services with `cosmic-session.target`.
 
-**Solution:** Create systemd user services that start with `cosmic-session.target`:
+**Final solution (v0.3.0+):** XDG autostart now works reliably on COSMIC. The app creates a standard desktop file:
 
 ```ini
-[Unit]
-After=cosmic-session.target
-PartOf=cosmic-session.target
-
-[Install]
-WantedBy=cosmic-session.target
+[Desktop Entry]
+Type=Application
+Name=Bing Wallpaper
+Exec=flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
+Terminal=false
+X-GNOME-Autostart-enabled=true
 ```
 
-### Phase 5: Daily Update Integration (v0.1.3)
+This is more portable than systemd services and works properly in Flatpak sandboxes.
 
-Added tray menu toggle for daily updates:
+### Phase 5: Daily Update Integration (v0.1.3 → v0.3.0)
+
+**Original approach (v0.1.3):** Used systemd timer for daily updates.
+
+**Final approach (v0.3.0+):** Internal timer embedded in the tray process. This is Flatpak-friendly and doesn't require systemd access.
+
+The tray owns an `InternalTimer` that:
+- Runs at configurable times (default 8:00 AM)
+- Persists enabled state to config file
+- Tracks last fetch time for boot catch-up
+- Works inside Flatpak sandboxes
 
 ```rust
-fn is_timer_enabled() -> bool {
-    Command::new("systemctl")
-        .args(["--user", "is-enabled", "cosmic-bing-wallpaper.timer"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
+// Timer runs inside the tray process
+let timer = Arc::new(InternalTimer::new());
+timer.start(|| {
+    // Fetch and apply wallpaper
+});
 ```
 
-The tray now shows "Daily Update: On/Off" and clicking toggles the systemd timer.
+The tray menu shows "Daily Update: On/Off" and clicking toggles the internal timer via D-Bus.
 
-### Phase 6: D-Bus Daemon Architecture (v0.1.4)
+### Phase 6: Embedded Service Architecture (v0.1.4 → v0.3.0)
 
-**Problem:** The tray and GUI couldn't communicate state changes. When you toggled the timer in the GUI, the tray icon didn't update. Each component managed its own state, leading to synchronization issues.
+**Original problem (v0.1.4):** The tray and GUI couldn't communicate state changes.
 
-**Solution:** Refactored to a daemon+clients architecture:
+**Original solution:** Separate daemon process with D-Bus interface.
+
+**Final architecture (v0.3.0+):** The daemon functionality is now embedded directly in the tray process. This simplifies deployment and is more Flatpak-friendly:
 
 ```
-                    D-Bus (org.cosmicbing.Wallpaper1)
+┌─────────────────────────────────────────────────────────────┐
+│                    TRAY PROCESS (main)                      │
+│  - Always running, shows tray icon                          │
+│  - Owns WallpaperService (was separate daemon)              │
+│  - Exposes D-Bus interface for GUI                          │
+│  - Runs internal timer (replaces systemd)                   │
+│  - Handles wallpaper fetching/applying                      │
+└─────────────────────────────────────────────────────────────┘
+                              ↑ D-Bus
                               │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-   GUI Client            Daemon              Tray Client
-   (app.rs)           (daemon.rs)            (tray.rs)
+              ┌───────────────┴───────────────┐
+              │         GUI PROCESS           │
+              │   - Settings/history browser  │
+              │   - Thin client to tray       │
+              │   - Can run independently     │
+              └───────────────────────────────┘
 ```
 
-**New files created:**
-- `daemon.rs` - D-Bus service with `org.cosmicbing.Wallpaper1` interface
-- `dbus_client.rs` - Client proxy for GUI and tray to call daemon
+**Key files:**
+- `service.rs` - WallpaperService with D-Bus interface (embedded in tray)
+- `timer.rs` - Internal timer (replaces systemd timer)
+- `dbus_client.rs` - Client proxy for GUI to communicate with tray
 
 **D-Bus interface using zbus:**
 
 ```rust
 #[interface(name = "org.cosmicbing.Wallpaper1")]
-impl WallpaperDaemon {
+impl WallpaperService {
     async fn fetch_wallpaper(&self, apply: bool) -> zbus::fdo::Result<String>;
     async fn get_timer_enabled(&self) -> bool;
     async fn set_timer_enabled(&mut self, enabled: bool) -> zbus::fdo::Result<()>;
     #[zbus(property)]
     fn wallpaper_dir(&self) -> String;
-}
-```
-
-**Challenge:** Calling async D-Bus methods from synchronous tray callbacks.
-
-**Wrong approach:**
-```rust
-// Panics if called from within an async context!
-tokio::runtime::Runtime::new().unwrap().block_on(async { ... })
-```
-
-**Correct approach:**
-```rust
-let rt = tokio::runtime::Builder::new_current_thread()
-    .enable_all()
-    .build();
-if let Ok(rt) = rt {
-    rt.block_on(async {
-        let client = WallpaperClient::connect().await?;
-        client.some_method().await
-    })
 }
 ```
 
@@ -357,19 +357,17 @@ Throughout development, we performed extensive manual testing:
 5. **Autostart testing**
    - Log out and log in
    - Verify tray icon appears automatically
-   - **Found bug:** XDG autostart doesn't work on COSMIC
-   - **Fixed:** Switched to systemd services
+   - Verify XDG autostart desktop file is created in `~/.config/autostart/`
 
-6. **Systemd service testing**
-   ```bash
-   systemctl --user status cosmic-bing-wallpaper-tray.service
-   systemctl --user status cosmic-bing-wallpaper.timer
-   # Verified: services start correctly
-   ```
+6. **Internal timer testing**
+   - Enable timer from tray menu
+   - Check config file to verify `timer_enabled: true`
+   - Test timer fires by checking wallpaper updates
 
 7. **Timer toggle testing**
    - Click "Daily Update" in tray menu
-   - Verify timer enables/disables via `systemctl --user is-enabled`
+   - Verify icon changes (green tick = on, red cross = off)
+   - Verify GUI reflects the timer state via D-Bus query
 
 8. **AppImage testing**
    - Build AppImage with `just build-appimage`
@@ -422,7 +420,7 @@ The `symbolic` suffix tells COSMIC to use theme-appropriate coloring.
 
 1. **COSMIC is different** - It's not GNOME or KDE. Don't assume XDG standards work; check COSMIC-specific docs.
 
-2. **Systemd is your friend** - For COSMIC, systemd user services are more reliable than desktop autostart files.
+2. **XDG autostart now works** - While early COSMIC versions had issues with XDG autostart, current versions support it properly. Prefer XDG autostart over systemd for Flatpak compatibility.
 
 3. **Test early autostart** - This was the most common failure mode. Test login/logout cycles early.
 
@@ -447,34 +445,31 @@ The `symbolic` suffix tells COSMIC to use theme-appropriate coloring.
 ```
 cosmic-bing-wallpaper/
 ├── README.md                 # User-facing documentation
-├── DEVELOPMENT.md            # This file (high-level journey)
-├── THEMATIC-ANALYSIS.md      # Patterns in AI-human collaboration
-├── RETROSPECTIVE.md          # What worked, what didn't
-├── install-appimage.sh       # AppImage installer script
-├── transcripts/              # Conversation transcripts
-│   ├── CONVERSATION-PART1-CREATION.md
-│   ├── CONVERSATION-PART2-REFINEMENT.md
-│   ├── CONVERSATION-PART3-CODE-REVIEW.md
-│   └── CONVERSATION-PART4-ARCHITECTURE.md
+├── docs/
+│   ├── DEVELOPMENT.md        # This file (high-level journey)
+│   ├── THEMATIC-ANALYSIS.md  # Patterns in AI-human collaboration
+│   ├── RETROSPECTIVE.md      # What worked, what didn't
+│   └── transcripts/          # Conversation transcripts
+├── flathub/                  # Flatpak manifest and sources
+│   ├── io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
+│   └── cargo-sources.json
 └── cosmic-bing-wallpaper/    # Main Rust project
     ├── Cargo.toml
     ├── CHANGELOG.md          # Version history
-    ├── DEVELOPMENT.md        # Technical learnings (detailed)
     ├── justfile              # Build/install recipes
     ├── src/
     │   ├── main.rs           # Entry point, CLI handling
     │   ├── app.rs            # GUI application (MVU pattern)
     │   ├── bing.rs           # Bing API client
     │   ├── config.rs         # Configuration management
-    │   ├── daemon.rs         # D-Bus daemon service
-    │   ├── dbus_client.rs    # D-Bus client proxy
-    │   └── tray.rs           # System tray with theme-aware icons
-    ├── resources/
-    │   ├── *.desktop         # Desktop entry files
-    │   ├── *.svg             # Application icons
-    │   └── icon-*.png        # Tray icons (on/off, dark/light)
-    └── appimage/
-        └── build-appimage.sh # AppImage build script
+    │   ├── service.rs        # WallpaperService (embedded in tray, exposes D-Bus)
+    │   ├── timer.rs          # Internal timer (replaces systemd timer)
+    │   ├── dbus_client.rs    # D-Bus client proxy for GUI
+    │   └── tray.rs           # System tray with embedded service
+    └── resources/
+        ├── *.desktop         # Desktop entry files
+        ├── *.svg             # Application icons
+        └── icon-*.png        # Tray icons (on/off, dark/light)
 ```
 
 ## Tools Used
@@ -484,10 +479,9 @@ cosmic-bing-wallpaper/
 - **Rust/Cargo** - Build system
 - **just** - Task runner (like make, but simpler)
 - **gh** - GitHub CLI for releases
-- **appimagetool** - AppImage creation
-- **systemctl** - Systemd service management
+- **flatpak-builder** - Flatpak package builds
 - **Python/PIL** - Icon generation and manipulation
-- **D-Bus** - Inter-process communication for daemon architecture
+- **D-Bus** - Inter-process communication (GUI ↔ tray)
 
 ---
 
