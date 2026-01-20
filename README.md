@@ -104,7 +104,7 @@ After completion, we analysed what worked and what could have been better:
 
 ### What the Thematic Analysis Revealed
 
-A thematic analysis of our conversation transcripts (also performed by Claude, but only after I asked for it) identified key patterns across 4 development sessions:
+A thematic analysis of our conversation transcripts (also performed by Claude, but only after I asked for it) identified key patterns across 6 development sessions:
 
 | Theme | Finding |
 |-------|---------|
@@ -115,6 +115,9 @@ A thematic analysis of our conversation transcripts (also performed by Claude, b
 | **Organic Scope Evolution** | The project grew from shell script → GUI → tray → systemd through dialogue |
 | **External Knowledge Integration** | Solutions sometimes came from other AI tools (e.g., Gemini suggested pixmap approach) |
 | **Architecture Emerges from Pain** | The daemon+clients model emerged only after synchronization problems became clear |
+| **Sandbox Path Isolation** | Flatpak's sandboxed paths differ from host paths—broke COSMIC integration |
+| **Incremental Permission Discovery** | Flatpak permissions discovered through runtime errors, not documentation |
+| **Cross-Distribution Testing** | Apps working on Manjaro failed on Pop!_OS due to SDK version differences |
 
 The emerging model of AI-assisted development:
 
@@ -125,25 +128,28 @@ The emerging model of AI-assisted development:
 | Propose solutions | ✓ | |
 | Test in real environment | | ✓ |
 | Recognise incorrect behaviour | | ✓ |
+| Test across session boundaries | | ✓ |
+| **Test across distributions** | | ✓ |
 | Make final decisions | | ✓ |
 | Know when to stop | | ✓ |
 
-The human becomes an **editor, tester, and director**—roles that require understanding *what* software should do, even without knowing *how* to implement it.
+The human becomes an **editor, tester, and director**—roles that require understanding *what* software should do, even without knowing *how* to implement it. Cross-distribution testing is now an essential human responsibility.
 
-*See [docs/THEMATIC-ANALYSIS.md](docs/THEMATIC-ANALYSIS.md) for the complete analysis.*
+*See [docs/THEMATIC-ANALYSIS.md](docs/THEMATIC-ANALYSIS.md) for the complete analysis (26 themes across 6 sessions).*
 
 ### Educational Resources
 
 | Resource | Description |
 |----------|-------------|
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Technical journey from concept to release |
-| [docs/THEMATIC-ANALYSIS.md](docs/THEMATIC-ANALYSIS.md) | 16 themes identified in AI-human collaboration patterns |
+| [docs/THEMATIC-ANALYSIS.md](docs/THEMATIC-ANALYSIS.md) | 26 themes identified in AI-human collaboration patterns |
 | [docs/RETROSPECTIVE.md](docs/RETROSPECTIVE.md) | What worked, what didn't, and lessons for future projects |
 | **Conversation Transcripts** | |
 | [Part 1: Creation](docs/transcripts/CONVERSATION-PART1-CREATION.md) | Initial development from shell script to GUI application |
 | [Part 2: Refinement](docs/transcripts/CONVERSATION-PART2-REFINEMENT.md) | Bug fixes, system tray, systemd integration, packaging |
 | [Part 3: Code Review](docs/transcripts/CONVERSATION-PART3-CODE-REVIEW.md) | Edge case analysis and 13 fixes |
 | [Part 4: Architecture & Polish](docs/transcripts/CONVERSATION-PART4-ARCHITECTURE.md) | D-Bus daemon refactoring, theme-aware icons, colored indicators |
+| [Part 6: Cross-Distribution Flatpak](docs/transcripts/CONVERSATION-PART6-FLATPAK.md) | Flatpak debugging on Pop!_OS after development on Manjaro |
 | [Raw transcripts](docs/transcripts/) | JSONL files for programmatic analysis |
 
 ---
