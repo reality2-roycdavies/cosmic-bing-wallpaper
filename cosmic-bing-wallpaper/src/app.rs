@@ -160,10 +160,10 @@ pub enum Message {
     CancelDeleteHistoryItem,
 
     // === Login Wallpaper ===
-    /// User clicked "Apply to Login Screen" button
+    /// User clicked "Create Script" button for login wallpaper
     ApplyLoginWallpaper,
-    /// Login wallpaper application completed
-    AppliedLoginWallpaper(Result<(), String>),
+    /// Script creation completed (contains script path on success)
+    ScriptCreated(Result<String, String>),
 
     // === Timer Management ===
     /// Query timer status via D-Bus
@@ -386,20 +386,61 @@ impl Application for BingWallpaper {
             }
 
             Message::ApplyLoginWallpaper => {
-                self.status_message = "Applying to login screen (authentication required)...".to_string();
+                // Get home directory to embed in script (so sudo doesn't expand ~ to /root)
+                let home = std::env::var("HOME").unwrap_or_else(|_|
+                    dirs::home_dir()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "~".to_string())
+                );
+
+                // Create script with hardcoded home path
+                let script_content = format!(r#"#!/bin/bash
+mkdir -p /var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicBackground/v1
+cp {}/.config/cosmic/com.system76.CosmicBackground/v1/all /var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicBackground/v1/
+echo "Login wallpaper updated!"
+"#, home);
+
                 Task::perform(
-                    async move { apply_login_wallpaper_async().await },
-                    |result| Action::App(Message::AppliedLoginWallpaper(result)),
+                    async move {
+                        // Write script using bash heredoc via flatpak-spawn
+                        let script_path = format!("{}/set-login-wp.sh", home);
+                        let cmd = format!(
+                            "cat > {} << 'SCRIPT'\n{}\nSCRIPT\nchmod +x {}",
+                            script_path, script_content, script_path
+                        );
+
+                        let result = if is_flatpak() {
+                            tokio::process::Command::new("flatpak-spawn")
+                                .args(["--host", "bash", "-c", &cmd])
+                                .output()
+                                .await
+                        } else {
+                            tokio::process::Command::new("bash")
+                                .args(["-c", &cmd])
+                                .output()
+                                .await
+                        };
+
+                        match result {
+                            Ok(output) if output.status.success() => Ok(script_path),
+                            Ok(output) => {
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                Err(format!("Script creation failed: {}", stderr))
+                            }
+                            Err(e) => Err(e.to_string()),
+                        }
+                    },
+                    |result| Action::App(Message::ScriptCreated(result)),
                 )
             }
 
-            Message::AppliedLoginWallpaper(result) => {
+            Message::ScriptCreated(result) => {
                 match result {
-                    Ok(()) => {
-                        self.status_message = "Login wallpaper updated!".to_string();
+                    Ok(path) => {
+                        self.status_message = format!("Run: sudo {}", path);
                     }
                     Err(e) => {
-                        self.status_message = format!("Login wallpaper: {}", e);
+                        self.status_message = format!("Error: {}", e);
                     }
                 }
                 Task::none()
@@ -664,7 +705,7 @@ impl BingWallpaper {
             .on_press(Message::ShowHistory);
 
         // Only show login wallpaper button if we have a wallpaper set
-        let login_btn = button::standard("Apply to Login Screen")
+        let login_btn = button::standard("Create Script")
             .on_press_maybe(if self.image_path.is_some() { Some(Message::ApplyLoginWallpaper) } else { None });
 
         let actions_section = settings::section()
@@ -681,7 +722,7 @@ impl BingWallpaper {
                     row()
                         .spacing(12)
                         .align_y(cosmic::iced::Alignment::Center)
-                        .push(text::caption("Copy current wallpaper to login screen"))
+                        .push(text::caption("Show command to copy wallpaper to login"))
                         .push(login_btn),
                 )
             );
@@ -1114,59 +1155,6 @@ async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
         _ => Err("cosmic-bg failed to start - wallpaper may not have been applied".to_string())
     }
 }
-
-/// Apply the current wallpaper to the login screen (cosmic-greeter).
-///
-/// This requires elevated privileges to write to /var/lib/cosmic-greeter/.config/
-/// Uses pkexec to prompt the user for authentication.
-async fn apply_login_wallpaper_async() -> Result<(), String> {
-    let source_config = dirs::home_dir()
-        .ok_or("Could not find home directory")?
-        .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
-
-    let greeter_config_dir = "/var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicBackground/v1";
-    let greeter_config_file = format!("{}/all", greeter_config_dir);
-
-    // Build a shell command that creates the directory and copies the file
-    let shell_cmd = format!(
-        "mkdir -p '{}' && cp '{}' '{}'",
-        greeter_config_dir,
-        source_config.display(),
-        greeter_config_file
-    );
-
-    // Use pkexec to run with elevated privileges
-    // In Flatpak, we need flatpak-spawn --host to access pkexec
-    let result = if is_flatpak() {
-        tokio::process::Command::new("flatpak-spawn")
-            .args(["--host", "pkexec", "bash", "-c", &shell_cmd])
-            .output()
-            .await
-    } else {
-        tokio::process::Command::new("pkexec")
-            .args(["bash", "-c", &shell_cmd])
-            .output()
-            .await
-    };
-
-    match result {
-        Ok(output) if output.status.success() => {
-            println!("Login wallpaper set successfully");
-            Ok(())
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("dismissed") || output.status.code() == Some(126) {
-                // User cancelled the authentication dialog
-                Err("Authentication cancelled".to_string())
-            } else {
-                Err(format!("Failed to set login wallpaper: {}", stderr))
-            }
-        }
-        Err(e) => Err(format!("Failed to run pkexec: {}", e)),
-    }
-}
-
 /// Public wrapper for headless wallpaper application.
 ///
 /// Used by the CLI `--fetch` mode and internal timer.
