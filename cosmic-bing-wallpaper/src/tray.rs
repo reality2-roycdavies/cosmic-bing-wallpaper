@@ -22,7 +22,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use zbus::connection;
 
@@ -73,6 +73,15 @@ fn is_dark_mode() -> bool {
 
     // Default to dark mode (most common for tray panels)
     true
+}
+
+/// Reason for tray exit - used for suspend/resume detection
+#[derive(Debug)]
+enum TrayExitReason {
+    /// User requested quit via menu
+    Quit,
+    /// Detected suspend/resume, should restart tray
+    SuspendResume,
 }
 
 /// Message types for tray updates
@@ -266,18 +275,37 @@ impl Tray for BingWallpaperTray {
 /// from a dedicated thread or as the main entry point for tray-only mode.
 ///
 /// Returns when the user selects "Quit" from the tray menu.
+///
+/// The tray automatically restarts after suspend/resume to recover from
+/// stale D-Bus connections that cause the icon to disappear.
 pub fn run_tray() -> Result<(), String> {
+    // Brief delay on startup to ensure StatusNotifierWatcher is ready
+    // This helps when autostarting at login before the panel is fully initialized
+    std::thread::sleep(Duration::from_secs(2));
+
     // Create the tokio runtime for async operations
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
 
-    rt.block_on(async {
-        run_tray_async().await
-    })
+    // Outer retry loop - restarts tray after suspend/resume
+    loop {
+        match rt.block_on(run_tray_inner())? {
+            TrayExitReason::Quit => break,
+            TrayExitReason::SuspendResume => {
+                println!("Detected suspend/resume, restarting tray...");
+                // Brief delay before restarting to let D-Bus settle
+                std::thread::sleep(Duration::from_millis(500));
+                continue;
+            }
+        }
+    }
+
+    Ok(())
 }
 
-/// Async implementation of the tray service
-async fn run_tray_async() -> Result<(), String> {
+/// Inner async implementation of the tray service
+/// Returns the reason for exit so the outer loop can decide whether to restart
+async fn run_tray_inner() -> Result<TrayExitReason, String> {
     // Create the internal timer
     let timer = Arc::new(InternalTimer::new());
 
@@ -398,8 +426,27 @@ async fn run_tray_async() -> Result<(), String> {
         }
     });
 
+    // Track time for suspend/resume detection
+    let mut loop_start = Instant::now();
+
     // Main loop
     loop {
+        // Detect suspend/resume by checking for time jumps
+        // If the sleep took much longer than expected (>5 seconds vs expected 50ms),
+        // we likely woke from suspend and should restart to recover D-Bus connections
+        let elapsed = loop_start.elapsed();
+        if elapsed > Duration::from_secs(5) {
+            println!("Time jump detected ({:?}), likely suspend/resume", elapsed);
+            // Cleanup before returning
+            timer_handle.abort();
+            handle.shutdown();
+            drop(dbus_conn);
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            crate::remove_tray_lockfile();
+            return Ok(TrayExitReason::SuspendResume);
+        }
+        loop_start = Instant::now();
+
         if should_quit.load(Ordering::SeqCst) {
             break;
         }
@@ -530,5 +577,5 @@ async fn run_tray_async() -> Result<(), String> {
     // Clean up lockfile on exit
     crate::remove_tray_lockfile();
 
-    Ok(())
+    Ok(TrayExitReason::Quit)
 }
