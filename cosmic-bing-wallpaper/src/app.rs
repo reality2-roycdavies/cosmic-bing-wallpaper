@@ -159,6 +159,12 @@ pub enum Message {
     /// Cancel pending deletion
     CancelDeleteHistoryItem,
 
+    // === Login Wallpaper ===
+    /// User clicked "Apply to Login Screen" button
+    ApplyLoginWallpaper,
+    /// Login wallpaper application completed
+    AppliedLoginWallpaper(Result<(), String>),
+
     // === Timer Management ===
     /// Query timer status via D-Bus
     CheckTimerStatus,
@@ -375,6 +381,26 @@ impl Application for BingWallpaper {
                     self.selected_market_idx = idx;
                     self.config.market = MARKETS[idx].code.to_string();
                     let _ = self.config.save();
+                }
+                Task::none()
+            }
+
+            Message::ApplyLoginWallpaper => {
+                self.status_message = "Applying to login screen (authentication required)...".to_string();
+                Task::perform(
+                    async move { apply_login_wallpaper_async().await },
+                    |result| Action::App(Message::AppliedLoginWallpaper(result)),
+                )
+            }
+
+            Message::AppliedLoginWallpaper(result) => {
+                match result {
+                    Ok(()) => {
+                        self.status_message = "Login wallpaper updated!".to_string();
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Login wallpaper: {}", e);
+                    }
                 }
                 Task::none()
             }
@@ -637,6 +663,10 @@ impl BingWallpaper {
         let history_btn = button::standard("History")
             .on_press(Message::ShowHistory);
 
+        // Only show login wallpaper button if we have a wallpaper set
+        let login_btn = button::standard("Apply to Login Screen")
+            .on_press_maybe(if self.image_path.is_some() { Some(Message::ApplyLoginWallpaper) } else { None });
+
         let actions_section = settings::section()
             .title("Actions")
             .add(
@@ -644,6 +674,16 @@ impl BingWallpaper {
                     fetch_btn.into(),
                     history_btn.into(),
                 ])
+            )
+            .add(
+                settings::flex_item(
+                    "Login Screen",
+                    row()
+                        .spacing(12)
+                        .align_y(cosmic::iced::Alignment::Center)
+                        .push(text::caption("Copy current wallpaper to login screen"))
+                        .push(login_btn),
+                )
             );
 
         // Main content using settings::view_column for proper COSMIC styling
@@ -1072,6 +1112,58 @@ async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
     match check {
         Ok(output) if output.status.success() => Ok(()),
         _ => Err("cosmic-bg failed to start - wallpaper may not have been applied".to_string())
+    }
+}
+
+/// Apply the current wallpaper to the login screen (cosmic-greeter).
+///
+/// This requires elevated privileges to write to /var/lib/cosmic-greeter/.config/
+/// Uses pkexec to prompt the user for authentication.
+async fn apply_login_wallpaper_async() -> Result<(), String> {
+    let source_config = dirs::home_dir()
+        .ok_or("Could not find home directory")?
+        .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
+
+    let greeter_config_dir = "/var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicBackground/v1";
+    let greeter_config_file = format!("{}/all", greeter_config_dir);
+
+    // Build a shell command that creates the directory and copies the file
+    let shell_cmd = format!(
+        "mkdir -p '{}' && cp '{}' '{}'",
+        greeter_config_dir,
+        source_config.display(),
+        greeter_config_file
+    );
+
+    // Use pkexec to run with elevated privileges
+    // In Flatpak, we need flatpak-spawn --host to access pkexec
+    let result = if is_flatpak() {
+        tokio::process::Command::new("flatpak-spawn")
+            .args(["--host", "pkexec", "bash", "-c", &shell_cmd])
+            .output()
+            .await
+    } else {
+        tokio::process::Command::new("pkexec")
+            .args(["bash", "-c", &shell_cmd])
+            .output()
+            .await
+    };
+
+    match result {
+        Ok(output) if output.status.success() => {
+            println!("Login wallpaper set successfully");
+            Ok(())
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("dismissed") || output.status.code() == Some(126) {
+                // User cancelled the authentication dialog
+                Err("Authentication cancelled".to_string())
+            } else {
+                Err(format!("Failed to set login wallpaper: {}", stderr))
+            }
+        }
+        Err(e) => Err(format!("Failed to run pkexec: {}", e)),
     }
 }
 
