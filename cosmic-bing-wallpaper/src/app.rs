@@ -159,12 +159,6 @@ pub enum Message {
     /// Cancel pending deletion
     CancelDeleteHistoryItem,
 
-    // === Login Wallpaper ===
-    /// User clicked "Create Script" button for login wallpaper
-    ApplyLoginWallpaper,
-    /// Script creation completed (contains script path on success)
-    ScriptCreated(Result<String, String>),
-
     // === Timer Management ===
     /// Query timer status via D-Bus
     CheckTimerStatus,
@@ -381,67 +375,6 @@ impl Application for BingWallpaper {
                     self.selected_market_idx = idx;
                     self.config.market = MARKETS[idx].code.to_string();
                     let _ = self.config.save();
-                }
-                Task::none()
-            }
-
-            Message::ApplyLoginWallpaper => {
-                // Get home directory to embed in script (so sudo doesn't expand ~ to /root)
-                let home = std::env::var("HOME").unwrap_or_else(|_|
-                    dirs::home_dir()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "~".to_string())
-                );
-
-                // Create script with hardcoded home path
-                let script_content = format!(r#"#!/bin/bash
-mkdir -p /var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicBackground/v1
-cp {}/.config/cosmic/com.system76.CosmicBackground/v1/all /var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicBackground/v1/
-echo "Login wallpaper updated!"
-"#, home);
-
-                Task::perform(
-                    async move {
-                        // Write script using bash heredoc via flatpak-spawn
-                        let script_path = format!("{}/set-login-wp.sh", home);
-                        let cmd = format!(
-                            "cat > {} << 'SCRIPT'\n{}\nSCRIPT\nchmod +x {}",
-                            script_path, script_content, script_path
-                        );
-
-                        let result = if is_flatpak() {
-                            tokio::process::Command::new("flatpak-spawn")
-                                .args(["--host", "bash", "-c", &cmd])
-                                .output()
-                                .await
-                        } else {
-                            tokio::process::Command::new("bash")
-                                .args(["-c", &cmd])
-                                .output()
-                                .await
-                        };
-
-                        match result {
-                            Ok(output) if output.status.success() => Ok(script_path),
-                            Ok(output) => {
-                                let stderr = String::from_utf8_lossy(&output.stderr);
-                                Err(format!("Script creation failed: {}", stderr))
-                            }
-                            Err(e) => Err(e.to_string()),
-                        }
-                    },
-                    |result| Action::App(Message::ScriptCreated(result)),
-                )
-            }
-
-            Message::ScriptCreated(result) => {
-                match result {
-                    Ok(path) => {
-                        self.status_message = format!("Run: sudo {}", path);
-                    }
-                    Err(e) => {
-                        self.status_message = format!("Error: {}", e);
-                    }
                 }
                 Task::none()
             }
@@ -704,10 +637,6 @@ impl BingWallpaper {
         let history_btn = button::standard("History")
             .on_press(Message::ShowHistory);
 
-        // Only show login wallpaper button if we have a wallpaper set
-        let login_btn = button::standard("Create Script")
-            .on_press_maybe(if self.image_path.is_some() { Some(Message::ApplyLoginWallpaper) } else { None });
-
         let actions_section = settings::section()
             .title("Actions")
             .add(
@@ -715,16 +644,6 @@ impl BingWallpaper {
                     fetch_btn.into(),
                     history_btn.into(),
                 ])
-            )
-            .add(
-                settings::flex_item(
-                    "Login Screen",
-                    row()
-                        .spacing(12)
-                        .align_y(cosmic::iced::Alignment::Center)
-                        .push(text::caption("Show command to copy wallpaper to login"))
-                        .push(login_btn),
-                )
             );
 
         // Main content using settings::view_column for proper COSMIC styling
