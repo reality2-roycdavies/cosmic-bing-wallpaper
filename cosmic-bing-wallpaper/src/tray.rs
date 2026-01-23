@@ -214,7 +214,7 @@ impl Tray for BingWallpaperTray {
         vec![
             StandardItem {
                 label: "Fetch Today's Wallpaper".to_string(),
-                icon_name: "emblem-downloads".to_string(),
+                icon_name: "emblem-downloads-symbolic".to_string(),
                 activate: Box::new(|tray: &mut Self| {
                     let _ = tray.update_tx.send(TrayUpdate::FetchWallpaper);
                 }),
@@ -226,9 +226,9 @@ impl Tray for BingWallpaperTray {
             StandardItem {
                 label: "Toggle Daily Update".to_string(),
                 icon_name: if self.timer_enabled {
-                    "appointment-recurring".to_string()
+                    "appointment-recurring-symbolic".to_string()
                 } else {
-                    "appointment-missed".to_string()
+                    "appointment-missed-symbolic".to_string()
                 },
                 activate: Box::new(|tray: &mut Self| {
                     let new_state = !tray.timer_enabled;
@@ -244,8 +244,8 @@ impl Tray for BingWallpaperTray {
             .into(),
             MenuItem::Separator,
             StandardItem {
-                label: "Settings ...".to_string(),
-                icon_name: "preferences-desktop-wallpaper".to_string(),
+                label: "Settings...".to_string(),
+                icon_name: "preferences-system-symbolic".to_string(),
                 activate: Box::new(|_| {
                     std::thread::spawn(|| {
                         let exe = std::env::current_exe().unwrap_or_default();
@@ -258,7 +258,7 @@ impl Tray for BingWallpaperTray {
             MenuItem::Separator,
             StandardItem {
                 label: "Quit".to_string(),
-                icon_name: "application-exit".to_string(),
+                icon_name: "application-exit-symbolic".to_string(),
                 activate: Box::new(|tray: &mut Self| {
                     tray.should_quit.store(true, Ordering::SeqCst);
                 }),
