@@ -71,6 +71,16 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.3.4" date="2026-01-24">
+      <description>
+        <p>Autostart reliability fix:</p>
+        <ul>
+          <li>Fixed stale lockfile detection across system reboots</li>
+          <li>Tray now properly starts on login after reboot</li>
+          <li>Uses boot time comparison instead of elapsed time for lockfile cleanup</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-01-19">
       <description>
         <p>Flathub submission release:</p>
