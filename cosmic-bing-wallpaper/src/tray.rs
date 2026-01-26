@@ -37,9 +37,29 @@ fn host_cosmic_config_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".config/cosmic"))
 }
 
-/// Get the path to COSMIC's theme config file
+/// Get the path to COSMIC's theme mode config file
 fn cosmic_theme_path() -> Option<PathBuf> {
     host_cosmic_config_dir().map(|d| d.join("com.system76.CosmicTheme.Mode/v1/is_dark"))
+}
+
+/// Get the path to the active theme directory
+fn cosmic_theme_dir() -> Option<PathBuf> {
+    let is_dark = is_dark_mode();
+    let theme_name = if is_dark { "Dark" } else { "Light" };
+    host_cosmic_config_dir().map(|d| d.join(format!("com.system76.CosmicTheme.{}/v1", theme_name)))
+}
+
+/// Get modification time of theme color files for change detection
+fn get_theme_files_mtime() -> Option<std::time::SystemTime> {
+    let theme_dir = cosmic_theme_dir()?;
+    let accent_path = theme_dir.join("accent");
+    let bg_path = theme_dir.join("background");
+
+    // Return the most recent modification time of either file
+    let accent_mtime = fs::metadata(&accent_path).ok()?.modified().ok()?;
+    let bg_mtime = fs::metadata(&bg_path).ok()?.modified().ok()?;
+
+    Some(accent_mtime.max(bg_mtime))
 }
 
 /// Detect if the system is in dark mode
@@ -345,35 +365,40 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
 
     // Set up file watcher for theme changes
     let (theme_tx, theme_rx) = channel();
-    let _watcher = if let Some(theme_path) = cosmic_theme_path() {
-        let watch_dir = theme_path.parent().map(|p| p.to_path_buf());
-        if let Some(watch_dir) = watch_dir {
-            let tx = theme_tx.clone();
-            let config = NotifyConfig::default()
-                .with_poll_interval(Duration::from_secs(1));
-            let mut watcher: Result<RecommendedWatcher, _> = Watcher::new(
-                move |res: Result<notify::Event, _>| {
-                    if let Ok(event) = res {
-                        if matches!(
-                            event.kind,
-                            notify::EventKind::Modify(_) | notify::EventKind::Create(_)
-                        ) {
-                            let _ = tx.send(());
-                        }
+    let _watcher = {
+        let tx = theme_tx.clone();
+        let config = NotifyConfig::default()
+            .with_poll_interval(Duration::from_secs(1));
+        let mut watcher: Result<RecommendedWatcher, _> = Watcher::new(
+            move |res: Result<notify::Event, _>| {
+                if let Ok(event) = res {
+                    if matches!(
+                        event.kind,
+                        notify::EventKind::Modify(_) | notify::EventKind::Create(_)
+                    ) {
+                        let _ = tx.send(());
                     }
-                },
-                config,
-            );
-            if let Ok(ref mut w) = watcher {
-                let _ = w.watch(&watch_dir, RecursiveMode::NonRecursive);
+                }
+            },
+            config,
+        );
+        if let Ok(ref mut w) = watcher {
+            // Watch theme mode directory (is_dark)
+            if let Some(theme_path) = cosmic_theme_path() {
+                if let Some(watch_dir) = theme_path.parent() {
+                    let _ = w.watch(watch_dir, RecursiveMode::NonRecursive);
+                }
             }
-            watcher.ok()
-        } else {
-            None
+            // Watch theme color files directory (accent, background)
+            if let Some(theme_dir) = cosmic_theme_dir() {
+                let _ = w.watch(&theme_dir, RecursiveMode::NonRecursive);
+            }
         }
-    } else {
-        None
+        watcher.ok()
     };
+
+    // Track theme file modification times for robust change detection
+    let mut tracked_theme_mtime = get_theme_files_mtime();
 
     // Spawn timer event handler
     let state_for_timer = state.clone();
@@ -522,7 +547,17 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
         // Also poll periodically as fallback since inotify isn't always reliable
         static THEME_CHECK_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let theme_counter = THEME_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let theme_changed = theme_rx.try_recv().is_ok() || theme_counter % 20 == 0; // Check every ~1 second
+        let mut theme_changed = theme_rx.try_recv().is_ok() || theme_counter % 20 == 0; // Check every ~1 second
+
+        // Also check theme file modification times as robust backup
+        if theme_counter % 20 == 0 {
+            let new_mtime = get_theme_files_mtime();
+            if new_mtime != tracked_theme_mtime {
+                tracked_theme_mtime = new_mtime;
+                theme_changed = true;
+            }
+        }
+
         if theme_changed {
             let new_dark_mode = is_dark_mode();
             handle.update(|tray| {
