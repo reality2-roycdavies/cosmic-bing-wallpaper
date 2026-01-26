@@ -62,6 +62,171 @@ fn get_theme_files_mtime() -> Option<std::time::SystemTime> {
     Some(accent_mtime.max(bg_mtime))
 }
 
+/// Parse a color from COSMIC theme RON format
+/// Looks for pattern like: red: 0.5, green: 0.3, blue: 0.2,
+fn parse_color_from_ron(content: &str, color_name: &str) -> Option<(u8, u8, u8)> {
+    let search_pattern = format!("{}:", color_name);
+    let start_idx = content.find(&search_pattern)?;
+    let block_start = content[start_idx..].find('(')?;
+    let block_end = content[start_idx + block_start..].find(')')?;
+    let block = &content[start_idx + block_start..start_idx + block_start + block_end + 1];
+
+    let extract_float = |name: &str| -> Option<f32> {
+        let pattern = format!("{}: ", name);
+        let idx = block.find(&pattern)?;
+        let start = idx + pattern.len();
+        let end = block[start..].find(',')?;
+        block[start..start + end].trim().parse().ok()
+    };
+
+    let red = extract_float("red")?;
+    let green = extract_float("green")?;
+    let blue = extract_float("blue")?;
+
+    Some((
+        (red.clamp(0.0, 1.0) * 255.0) as u8,
+        (green.clamp(0.0, 1.0) * 255.0) as u8,
+        (blue.clamp(0.0, 1.0) * 255.0) as u8,
+    ))
+}
+
+/// Get theme colors for the tray icon by reading directly from config files
+fn get_theme_colors() -> ((u8, u8, u8), (u8, u8, u8)) {
+    // Default colors
+    let default_normal = (200, 200, 200);
+    let default_accent = (0, 200, 200);
+
+    let theme_dir = match cosmic_theme_dir() {
+        Some(dir) => dir,
+        None => return (default_normal, default_accent),
+    };
+
+    // Read accent color
+    let accent_path = theme_dir.join("accent");
+    let accent = if let Ok(content) = fs::read_to_string(&accent_path) {
+        parse_color_from_ron(&content, "base").unwrap_or(default_accent)
+    } else {
+        default_accent
+    };
+
+    // Read background on color (foreground)
+    let bg_path = theme_dir.join("background");
+    let normal = if let Ok(content) = fs::read_to_string(&bg_path) {
+        parse_color_from_ron(&content, "on").unwrap_or(default_normal)
+    } else {
+        default_normal
+    };
+
+    (normal, accent)
+}
+
+/// Generate the tray icon dynamically using theme colors
+/// Icon is 24x24, showing a landscape/frame with sun and on/off indicator
+fn create_tray_icon(timer_enabled: bool) -> Vec<u8> {
+    let size: i32 = 24;
+    let mut pixels = vec![0u8; (size * size * 4) as usize];
+
+    let (normal_color, accent_color) = get_theme_colors();
+    let (r, g, b) = normal_color;
+    let (ar, ag, ab) = accent_color;
+
+    // Helper to set a pixel (ARGB format for ksni)
+    let set_pixel = |pixels: &mut Vec<u8>, x: i32, y: i32, r: u8, g: u8, b: u8, a: u8| {
+        if x >= 0 && x < size && y >= 0 && y < size {
+            let idx = ((y * size + x) * 4) as usize;
+            pixels[idx] = a;
+            pixels[idx + 1] = r;
+            pixels[idx + 2] = g;
+            pixels[idx + 3] = b;
+        }
+    };
+
+    // Draw frame (rectangle outline)
+    for x in 1..23 {
+        set_pixel(&mut pixels, x, 3, r, g, b, 255);   // top
+        set_pixel(&mut pixels, x, 20, r, g, b, 255);  // bottom
+    }
+    for y in 3..21 {
+        set_pixel(&mut pixels, 1, y, r, g, b, 255);   // left
+        set_pixel(&mut pixels, 22, y, r, g, b, 255);  // right
+    }
+
+    // Draw sun (filled circle at top-right area)
+    let sun_cx = 17.0f32;
+    let sun_cy = 7.0f32;
+    let sun_r = 2.5f32;
+    for y in 4..11 {
+        for x in 14..21 {
+            let dx = x as f32 - sun_cx;
+            let dy = y as f32 - sun_cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist <= sun_r {
+                let alpha = if dist > sun_r - 1.0 {
+                    ((sun_r - dist) * 255.0) as u8
+                } else {
+                    255
+                };
+                set_pixel(&mut pixels, x, y, r, g, b, alpha);
+            }
+        }
+    }
+
+    // Draw mountain/landscape (filled polygon approximation)
+    // Mountain 1: peak at (9, 10), base from (3, 17) to (15, 17)
+    for y in 10..18 {
+        let half_width = ((y - 10) as f32 * 1.0) as i32;
+        for x in (9 - half_width).max(3)..(9 + half_width).min(15) {
+            set_pixel(&mut pixels, x, y, r, g, b, 200);
+        }
+    }
+    // Mountain 2: peak at (15, 8), base from (10, 17) to (20, 17)
+    for y in 8..18 {
+        let half_width = ((y - 8) as f32 * 0.8) as i32;
+        for x in (15 - half_width).max(10)..(15 + half_width).min(20) {
+            set_pixel(&mut pixels, x, y, r, g, b, 220);
+        }
+    }
+
+    // Draw on/off indicator (bottom-right badge)
+    let badge_cx = 19.0f32;
+    let badge_cy = 17.0f32;
+    let badge_r = 4.0f32;
+
+    // Badge background circle
+    for y in 13..22 {
+        for x in 15..24 {
+            let dx = x as f32 - badge_cx;
+            let dy = y as f32 - badge_cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist <= badge_r {
+                if timer_enabled {
+                    set_pixel(&mut pixels, x, y, ar, ag, ab, 255);
+                } else {
+                    set_pixel(&mut pixels, x, y, 128, 128, 128, 255);
+                }
+            }
+        }
+    }
+
+    // Draw checkmark (on) or X (off) inside badge
+    if timer_enabled {
+        // Checkmark
+        set_pixel(&mut pixels, 17, 17, 255, 255, 255, 255);
+        set_pixel(&mut pixels, 18, 18, 255, 255, 255, 255);
+        set_pixel(&mut pixels, 19, 17, 255, 255, 255, 255);
+        set_pixel(&mut pixels, 20, 16, 255, 255, 255, 255);
+        set_pixel(&mut pixels, 21, 15, 255, 255, 255, 255);
+    } else {
+        // X mark
+        for i in 0..5 {
+            set_pixel(&mut pixels, 17 + i, 15 + i, 255, 255, 255, 255);
+            set_pixel(&mut pixels, 21 - i, 15 + i, 255, 255, 255, 255);
+        }
+    }
+
+    pixels
+}
+
 /// Detect if the system is in dark mode
 fn is_dark_mode() -> bool {
     // Try COSMIC's config file first
@@ -165,34 +330,13 @@ impl Tray for BingWallpaperTray {
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        // Provide multiple icon sizes - tray host picks the best one
-        // Use 24px icons designed with bold indicators - COSMIC scales as needed
-        let icon_data: &[u8] = match (self.timer_enabled, self.dark_mode) {
-            (true, true) => include_bytes!("../resources/icon-on-light-24.png"),
-            (true, false) => include_bytes!("../resources/icon-on-24.png"),
-            (false, true) => include_bytes!("../resources/icon-off-light-24.png"),
-            (false, false) => include_bytes!("../resources/icon-off-24.png"),
-        };
-
-        let img = match image::load_from_memory(icon_data) {
-            Ok(img) => img.to_rgba8(),
-            Err(_) => return vec![],
-        };
-
-        // Convert RGBA to ARGB (network byte order) which KSNI/DBus expects
-        let mut argb_data = Vec::with_capacity((img.width() * img.height() * 4) as usize);
-        for pixel in img.pixels() {
-            let [r, g, b, a] = pixel.0;
-            argb_data.push(a);
-            argb_data.push(r);
-            argb_data.push(g);
-            argb_data.push(b);
-        }
+        // Generate icon dynamically using current theme colors
+        let icon_data = create_tray_icon(self.timer_enabled);
 
         vec![ksni::Icon {
-            width: img.width() as i32,
-            height: img.height() as i32,
-            data: argb_data,
+            width: 24,
+            height: 24,
+            data: icon_data,
         }]
     }
 
@@ -559,11 +703,13 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
         }
 
         if theme_changed {
+            // Force icon refresh by updating tray state
+            // The icon is generated dynamically with current theme colors
             let new_dark_mode = is_dark_mode();
             handle.update(|tray| {
-                if tray.dark_mode != new_dark_mode {
-                    tray.dark_mode = new_dark_mode;
-                }
+                tray.dark_mode = new_dark_mode;
+                // Touch timer_enabled to force icon regeneration
+                // (icon_pixmap is called after any update)
             }).await;
         }
 
