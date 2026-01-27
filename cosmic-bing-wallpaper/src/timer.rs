@@ -10,23 +10,12 @@
 //! - Persists enabled state and last run time to config
 
 use chrono::{DateTime, Duration, Local, NaiveTime};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-/// Get the app config directory path
-/// In Flatpak, we use the exposed host config directory rather than XDG_CONFIG_HOME
-fn app_config_dir() -> Option<PathBuf> {
-    if std::path::Path::new("/.flatpak-info").exists() {
-        // In Flatpak, use the exposed host config directory
-        dirs::home_dir().map(|h| h.join(".config/cosmic-bing-wallpaper"))
-    } else {
-        // Native: use standard XDG config directory
-        dirs::config_dir().map(|d| d.join("cosmic-bing-wallpaper"))
-    }
-}
+use crate::config::app_config_dir;
 
 /// Default scheduled run time (08:00 local time)
 const SCHEDULED_HOUR: u32 = 8;
@@ -39,22 +28,13 @@ const BOOT_DELAY_SECS: u64 = 300; // 5 minutes
 const MAX_RANDOM_DELAY_SECS: u64 = 300; // 5 minutes
 
 /// Timer state persisted to disk
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TimerState {
     /// Whether the timer is enabled
     pub enabled: bool,
     /// Last successful fetch time (ISO 8601)
     #[serde(default)]
     pub last_fetch: Option<String>,
-}
-
-impl Default for TimerState {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            last_fetch: None,
-        }
-    }
 }
 
 impl TimerState {
@@ -211,8 +191,7 @@ impl InternalTimer {
         rx
     }
 
-    /// Stop the timer
-    #[allow(dead_code)]
+    /// Stop the timer background task
     pub fn stop(&self) {
         if let Ok(mut guard) = self.handle.lock() {
             if let Some(handle) = guard.take() {
@@ -269,12 +248,7 @@ impl Default for InternalTimer {
 
 impl Drop for InternalTimer {
     fn drop(&mut self) {
-        // Stop the timer on drop - stop() takes &self which works with &mut self
-        if let Ok(mut guard) = self.handle.lock() {
-            if let Some(handle) = guard.take() {
-                handle.abort();
-            }
-        }
+        self.stop();
     }
 }
 

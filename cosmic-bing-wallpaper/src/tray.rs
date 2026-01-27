@@ -691,10 +691,10 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
         // Also poll periodically as fallback since inotify isn't always reliable
         static THEME_CHECK_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let theme_counter = THEME_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut theme_changed = theme_rx.try_recv().is_ok() || theme_counter % 20 == 0; // Check every ~1 second
+        let mut theme_changed = theme_rx.try_recv().is_ok() || theme_counter.is_multiple_of(20); // Check every ~1 second
 
         // Also check theme file modification times as robust backup
-        if theme_counter % 20 == 0 {
+        if theme_counter.is_multiple_of(20) {
             let new_mtime = get_theme_files_mtime();
             if new_mtime != tracked_theme_mtime {
                 tracked_theme_mtime = new_mtime;
@@ -717,7 +717,7 @@ async fn run_tray_inner() -> Result<TrayExitReason, String> {
         // Check every ~500ms (10 iterations * 50ms sleep)
         static TIMER_CHECK_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let counter = TIMER_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        if counter % 10 == 0 {
+        if counter.is_multiple_of(10) {
             let current_enabled = timer.is_enabled();
             handle.update(|tray| {
                 if tray.timer_enabled != current_enabled {

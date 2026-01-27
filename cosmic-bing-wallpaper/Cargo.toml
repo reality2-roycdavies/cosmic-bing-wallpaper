@@ -25,11 +25,6 @@ reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Internationalization
-i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
-i18n-embed-fl = "0.10"
-rust-embed = "8"
-
 # File operations
 dirs = "6"
 

@@ -122,13 +122,13 @@ impl WallpaperService {
 
         // Fetch image info from Bing (must run in tokio runtime since reqwest requires it)
         let image = run_in_tokio(bing::fetch_bing_image_info(&market))
-            .map_err(|e| zbus::fdo::Error::Failed(e))?;
+            .map_err(zbus::fdo::Error::Failed)?;
 
         Self::fetch_progress(&ctx, "downloading", &format!("Downloading: {}", image.title)).await?;
 
         // Download the image (must run in tokio runtime since reqwest requires it)
         let path = run_in_tokio(bing::download_image(&image, &wallpaper_dir, &market))
-            .map_err(|e| zbus::fdo::Error::Failed(e))?;
+            .map_err(zbus::fdo::Error::Failed)?;
 
         // Clean up old wallpapers
         let keep_days = {
@@ -148,7 +148,7 @@ impl WallpaperService {
         if apply {
             Self::fetch_progress(&ctx, "applying", "Applying wallpaper...").await?;
             apply_cosmic_wallpaper(&path)
-                .map_err(|e| zbus::fdo::Error::Failed(e))?;
+                .map_err(zbus::fdo::Error::Failed)?;
 
             // Emit wallpaper changed signal
             Self::wallpaper_changed(&ctx, &path, &image.title).await?;
@@ -180,7 +180,7 @@ impl WallpaperService {
         #[zbus(signal_context)] ctx: SignalContext<'_>,
     ) -> zbus::fdo::Result<()> {
         apply_cosmic_wallpaper(&path)
-            .map_err(|e| zbus::fdo::Error::Failed(e))?;
+            .map_err(zbus::fdo::Error::Failed)?;
 
         // Get title from current image or use filename
         let title = {
@@ -219,7 +219,7 @@ impl WallpaperService {
         let mut state = self.state.write().await;
         state.config.market = market;
         state.config.save()
-            .map_err(|e| zbus::fdo::Error::Failed(e))
+            .map_err(zbus::fdo::Error::Failed)
     }
 
     /// Get the wallpaper directory path
@@ -289,8 +289,11 @@ impl WallpaperService {
     async fn fetch_progress(ctx: &SignalContext<'_>, state: &str, message: &str) -> zbus::Result<()>;
 }
 
-/// Extract date from wallpaper filename
-fn extract_date_from_filename(filename: &str) -> String {
+/// Extract date from wallpaper filename (YYYY-MM-DD format)
+///
+/// Looks for a date pattern at the end of the filename before the extension.
+/// Expected format: "bing-{market}-YYYY-MM-DD.jpg"
+pub fn extract_date_from_filename(filename: &str) -> String {
     let name_without_ext = filename
         .strip_suffix(".jpg")
         .or_else(|| filename.strip_suffix(".jpeg"))
@@ -342,7 +345,10 @@ fn scan_history(wallpaper_dir: &str) -> Vec<WallpaperInfo> {
 }
 
 /// Clean up old wallpapers based on keep_days setting
-fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
+///
+/// Removes bing-*.jpg files older than the specified number of days.
+/// Set keep_days to 0 to disable cleanup (keep forever).
+pub fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
     if keep_days == 0 {
         return 0;
     }
@@ -373,10 +379,8 @@ fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
 
             let date_str = &name_without_ext[name_without_ext.len() - 10..];
             if let Ok(file_date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                if file_date < cutoff_date {
-                    if std::fs::remove_file(&path).is_ok() {
-                        deleted += 1;
-                    }
+                if file_date < cutoff_date && std::fs::remove_file(&path).is_ok() {
+                    deleted += 1;
                 }
             }
         }

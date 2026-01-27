@@ -13,9 +13,13 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Get the app config directory path
+/// Get the app config directory path.
+///
 /// In Flatpak, we use the exposed host config directory rather than XDG_CONFIG_HOME
-fn app_config_dir() -> Option<PathBuf> {
+/// because Flatpak remaps XDG_CONFIG_HOME to ~/.var/app/APP_ID/config/.
+///
+/// Returns `~/.config/cosmic-bing-wallpaper/` in both native and Flatpak environments.
+pub fn app_config_dir() -> Option<PathBuf> {
     if std::path::Path::new("/.flatpak-info").exists() {
         // In Flatpak, use the exposed host config directory
         dirs::home_dir().map(|h| h.join(".config/cosmic-bing-wallpaper"))

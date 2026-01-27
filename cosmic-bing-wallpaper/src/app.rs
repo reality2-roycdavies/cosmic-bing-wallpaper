@@ -34,7 +34,6 @@
 //! - Restarting cosmic-bg process to apply changes
 //! - Managing automatic updates via internal timer (D-Bus)
 
-use chrono;
 use cosmic::app::Core;
 use cosmic::iced::{Length, ContentFit};
 use cosmic::widget::{self, button, column, container, row, text, dropdown, scrollable, settings, toggler};
@@ -44,7 +43,7 @@ use std::path::PathBuf;
 use crate::bing::{BingImage, fetch_bing_image_info, download_image};
 use crate::config::{Config, MARKETS};
 use crate::dbus_client::WallpaperClient;
-use crate::service::is_flatpak;
+use crate::service::{is_flatpak, cleanup_old_wallpapers, extract_date_from_filename};
 
 /// Unique application identifier for COSMIC.
 /// Used for window identification and desktop integration.
@@ -429,7 +428,7 @@ impl Application for BingWallpaper {
                 // Refresh GUI lockfile every 30 seconds (every 6 ticks at 5-second intervals)
                 static TICK_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
                 let count = TICK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if count % 6 == 0 {
+                if count.is_multiple_of(6) {
                     crate::create_gui_lockfile();
                 }
 
@@ -761,62 +760,6 @@ impl BingWallpaper {
     }
 }
 
-/// Cleans up old wallpapers that exceed the keep_days limit.
-///
-/// Looks at all bing-*.jpg files in the wallpaper directory, parses their dates,
-/// and removes any that are older than the configured keep_days setting.
-///
-/// # Arguments
-/// * `wallpaper_dir` - Path to the wallpaper directory
-/// * `keep_days` - Number of days to keep wallpapers (0 means keep forever)
-///
-/// # Returns
-/// Number of files deleted
-fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
-    if keep_days == 0 {
-        return 0; // 0 means keep forever
-    }
-
-    let dir = std::path::Path::new(wallpaper_dir);
-    if !dir.exists() {
-        return 0;
-    }
-
-    let cutoff_date = chrono::Local::now().date_naive() - chrono::Duration::days(keep_days as i64);
-    let mut deleted = 0;
-
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let filename = path.file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-
-            // Only process bing wallpaper files
-            if !filename.starts_with("bing-") || !filename.ends_with(".jpg") {
-                continue;
-            }
-
-            // Extract date from filename (last 10 chars before .jpg should be YYYY-MM-DD)
-            let name_without_ext = filename.strip_suffix(".jpg").unwrap_or(filename);
-            if name_without_ext.len() < 10 {
-                continue;
-            }
-
-            let date_str = &name_without_ext[name_without_ext.len() - 10..];
-            if let Ok(file_date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                if file_date < cutoff_date {
-                    if std::fs::remove_file(&path).is_ok() {
-                        deleted += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    deleted
-}
-
 /// Scans the wallpaper directory and returns a list of history items.
 ///
 /// Looks for .jpg, .jpeg, and .png files in the specified directory.
@@ -849,30 +792,7 @@ fn scan_history(wallpaper_dir: &str) -> Vec<HistoryItem> {
             let filename = path.file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
-
-            // Extract date from filename pattern "bing-{market}-YYYY-MM-DD.jpg"
-            // The date is always the last 10 characters before the extension (YYYY-MM-DD)
-            let name_without_ext = filename
-                .strip_suffix(".jpg")
-                .or_else(|| filename.strip_suffix(".jpeg"))
-                .or_else(|| filename.strip_suffix(".png"))
-                .unwrap_or(&filename);
-
-            let date = if name_without_ext.len() >= 10 {
-                // Extract last 10 chars which should be YYYY-MM-DD
-                let potential_date = &name_without_ext[name_without_ext.len() - 10..];
-                // Verify it looks like a date (YYYY-MM-DD format)
-                if potential_date.len() == 10
-                    && potential_date.chars().nth(4) == Some('-')
-                    && potential_date.chars().nth(7) == Some('-')
-                {
-                    potential_date.to_string()
-                } else {
-                    name_without_ext.to_string()
-                }
-            } else {
-                name_without_ext.to_string()
-            };
+            let date = extract_date_from_filename(&filename);
 
             HistoryItem { path, filename, date }
         })
