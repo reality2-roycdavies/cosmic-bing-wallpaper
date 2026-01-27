@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-01-27
+
+### Added
+
+- **Dynamic Theme-Colored Icons**: Tray icons now use COSMIC theme accent and foreground colors
+  - Icons generated dynamically at runtime using system theme colors
+  - Automatically updates when theme changes
+
+### Changed
+
+- **Improved Theme Detection**: Added file mtime tracking for more reliable theme change detection
+  - No longer relies solely on inotify events
+  - Works better across suspend/resume cycles
+
+---
+
+## [0.3.3] - 2026-01-20
+
+### Fixed
+
+- **Autostart Lockfile Detection**: Fixed lockfile detection across reboots
+  - Uses `/proc/stat` boot time to detect stale lockfiles from previous boots
+  - Prevents app from failing to start after reboot
+
+- **Suspend/Resume Reliability**: Fixed tray icon disappearing after suspend/resume
+  - Tray now detects suspend events and restarts appropriately
+
+- **Tray Menu Icons**: Updated to symbolic style for consistency with COSMIC design
+
+---
+
 ## [0.3.2] - 2026-01-18
 
 ### Changed

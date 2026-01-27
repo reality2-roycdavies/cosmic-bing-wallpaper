@@ -128,18 +128,29 @@ The original monolithic design had problems:
 
 ### Architecture
 
-```
-                    D-Bus (org.cosmicbing.Wallpaper1)
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-   GUI Client            Daemon              Tray Client
-   (app.rs)           (daemon.rs)            (tray.rs)
+The application uses a **tray-with-embedded-service** architecture:
 
-   - UI rendering      - Timer control       - Menu display
-   - User input        - Wallpaper fetch     - Quick actions
-   - D-Bus calls       - Config management   - D-Bus calls
 ```
+┌──────────────────────────────────────────────────┐
+│               Tray Process                        │
+│  ┌────────────┐  ┌────────┐  ┌───────────────┐  │
+│  │ D-Bus Svc  │  │ Timer  │  │  Tray Icon    │  │
+│  │(service.rs)│  │ (async)│  │  (ksni)       │  │
+│  └────────────┘  └────────┘  └───────────────┘  │
+└──────────────────────────────────────────────────┘
+        ▲
+        │ D-Bus calls (org.cosmicbing.Wallpaper1)
+        │
+┌───────┴────────────────┐
+│  GUI Process           │
+│  (app.rs + dbus_client)│
+│  - UI rendering        │
+│  - User input          │
+│  - D-Bus calls to tray │
+└────────────────────────┘
+```
+
+Note: The previous daemon+clients model used a separate `daemon.rs` process. This was refactored in v0.3.0 to embed the service directly in the tray process for Flatpak compatibility.
 
 ### D-Bus Interface Definition
 

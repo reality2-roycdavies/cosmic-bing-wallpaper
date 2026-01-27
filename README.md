@@ -255,9 +255,14 @@ The tray automatically creates an XDG autostart entry on first run, so it will s
 ## Configuration
 
 Configuration is stored at `~/.config/cosmic-bing-wallpaper/config.json`:
-- **Wallpaper directory**: Where images are saved (default: `~/Pictures/BingWallpapers/`)
-- **Market**: Which regional Bing market to use
-- **Auto-update**: Whether the timer is enabled
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `wallpaper_dir` | Directory where images are saved | `~/Pictures/BingWallpapers/` |
+| `market` | Regional Bing market code (e.g., "en-US") | `en-US` |
+| `auto_update` | Whether the daily update timer is enabled | `false` |
+| `keep_days` | Days to keep old wallpapers before cleanup (0 = keep forever) | `30` |
+| `fetch_on_startup` | Automatically fetch today's image when app starts | `true` |
 
 ## Supported Regions
 
@@ -362,11 +367,30 @@ The application uses a **tray-with-embedded-service** architecture for Flatpak c
 
 #### D-Bus Interface
 
-The tray exposes `org.cosmicbing.Wallpaper1` with these methods:
-- `FetchWallpaper(apply: bool) → String` - Fetch today's wallpaper
-- `GetTimerEnabled() → bool` / `SetTimerEnabled(bool)` - Timer control
-- `GetWallpaperDir() → String` - Get configured directory
-- `ApplyWallpaper(path: String)` - Apply a specific wallpaper
+The tray exposes `org.cosmicbing.Wallpaper1` with these methods and signals:
+
+**Methods:**
+| Method | Description |
+|--------|-------------|
+| `FetchWallpaper(apply: bool) → WallpaperInfo` | Fetch today's wallpaper, optionally apply |
+| `ApplyWallpaper(path: String)` | Apply a specific wallpaper file |
+| `GetConfig() → String` | Get full config as JSON |
+| `GetMarket() → String` | Get current market code |
+| `SetMarket(market: String)` | Set market code |
+| `GetWallpaperDir() → String` | Get wallpaper storage directory |
+| `GetTimerEnabled() → bool` | Check if daily timer is enabled |
+| `SetTimerEnabled(enabled: bool)` | Enable/disable daily timer |
+| `GetTimerNextRun() → String` | Get next scheduled run time |
+| `GetCurrentWallpaperPath() → String` | Get path of currently applied wallpaper |
+| `GetHistory() → Vec<WallpaperInfo>` | List downloaded wallpapers |
+| `DeleteWallpaper(path: String)` | Delete a wallpaper file |
+
+**Signals:**
+| Signal | Description |
+|--------|-------------|
+| `WallpaperChanged(path, title)` | Emitted when wallpaper is applied |
+| `TimerStateChanged(enabled)` | Emitted when timer state changes |
+| `FetchProgress(state, message)` | Progress updates during fetch |
 
 #### Why This Architecture?
 
