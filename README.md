@@ -173,8 +173,8 @@ This project includes both a simple shell script for quick use and a full native
 - **Quick Access**: Right-click menu for common actions
 - **Fetch Wallpaper**: Download today's image without opening the full app
 - **Open App**: Launch the full GUI when needed
-- **Theme-Aware Icons**: Automatically adapts to dark/light mode (v0.1.4+)
-- **Colored Status Indicators**: Green tick (enabled) / red cross (disabled) for visibility (v0.1.5+)
+- **Theme-Aware Icons**: Dynamically generated using COSMIC theme colors (v0.3.4+)
+- **Status Indicators**: Accent-colored tick (enabled) / gray cross (disabled) for visibility (v0.3.4+)
 - **Toggle Timer**: Enable/disable daily updates with instant visual feedback
 - **Instant Sync**: Changes in GUI immediately reflected in tray via D-Bus
 
@@ -301,8 +301,7 @@ cosmic-bing-wallpaper/
     └── resources/
         ├── *.desktop                  # Desktop entry file
         ├── *.svg                      # Application icons
-        ├── *.metainfo.xml             # AppStream metadata
-        └── icon-*.png                 # Tray icons (theme variants)
+        └── *.metainfo.xml             # AppStream metadata
 ```
 
 ## How It Works
@@ -412,10 +411,9 @@ The GUI follows the Model-View-Update (MVU) pattern:
 
 ### System Tray Features (v0.1.4+)
 
-- **Theme-aware icons**: Automatically switches between light/dark icons based on system theme
+- **Dynamic theme icons**: Icons generated at runtime using COSMIC theme foreground and accent colors
 - **Instant theme detection**: Uses inotify file watching (no polling) on COSMIC's theme config
-- **Embedded pixmaps**: Icons embedded in binary via `include_bytes!()` for reliable display
-- **Colored indicators** (v0.1.5): Green tick (timer ON) / red cross (timer OFF) for visibility at all sizes
+- **Status indicators**: Accent-colored tick (timer ON) / gray cross (timer OFF) with white marks
 - **External state sync**: Detects timer changes made by GUI and updates icon accordingly
 
 ### Technical Documentation
