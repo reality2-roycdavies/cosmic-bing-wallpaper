@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use zbus::connection;
 
-use crate::service::{ServiceState, WallpaperService, SERVICE_NAME, OBJECT_PATH};
+use crate::service::{is_flatpak, ServiceState, WallpaperService, SERVICE_NAME, OBJECT_PATH};
 use crate::timer::InternalTimer;
 
 /// Get the host's COSMIC config directory
@@ -412,8 +412,19 @@ impl Tray for BingWallpaperTray {
                 icon_name: "preferences-system-symbolic".to_string(),
                 activate: Box::new(|_| {
                     std::thread::spawn(|| {
-                        let exe = std::env::current_exe().unwrap_or_default();
-                        let _ = Command::new(exe).spawn();
+                        let result = if is_flatpak() {
+                            // In Flatpak, use flatpak-spawn to launch on host
+                            // (flatpak binary isn't available inside the sandbox)
+                            Command::new("flatpak-spawn")
+                                .args(["--host", "flatpak", "run", "io.github.reality2_roycdavies.cosmic-bing-wallpaper"])
+                                .spawn()
+                        } else {
+                            let exe = std::env::current_exe().unwrap_or_else(|_| "cosmic-bing-wallpaper".into());
+                            Command::new(exe).spawn()
+                        };
+                        if let Err(e) = result {
+                            eprintln!("Failed to launch settings GUI: {}", e);
+                        }
                     });
                 }),
                 ..Default::default()

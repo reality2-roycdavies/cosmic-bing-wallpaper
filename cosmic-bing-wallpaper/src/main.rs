@@ -80,16 +80,36 @@ fn is_tray_running() -> bool {
     let lockfile = tray_lockfile_path();
 
     if let Ok(metadata) = fs::metadata(&lockfile) {
-        // Check if lockfile is recent (less than 1 minute old means tray is likely running)
-        if let Ok(modified) = metadata.modified() {
-            if let Ok(elapsed) = modified.elapsed() {
-                // If lockfile was modified less than 60 seconds ago, tray is running
-                return elapsed.as_secs() < 60;
+        // First check: is the lockfile recent?
+        let is_recent = metadata.modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .map(|e| e.as_secs() < 60)
+            .unwrap_or(false);
+
+        if !is_recent {
+            // Lockfile is stale, clean it up
+            let _ = fs::remove_file(&lockfile);
+            return false;
+        }
+
+        // Second check: is the PID in the lockfile actually running?
+        // Skip this check in Flatpak since PIDs don't translate across sandbox boundary
+        if !service::is_flatpak() {
+            if let Ok(content) = fs::read_to_string(&lockfile) {
+                if let Ok(pid) = content.trim().parse::<u32>() {
+                    // Check if process exists by checking /proc/PID
+                    let proc_path = format!("/proc/{}", pid);
+                    if !std::path::Path::new(&proc_path).exists() {
+                        // Process is dead, clean up stale lockfile
+                        let _ = fs::remove_file(&lockfile);
+                        return false;
+                    }
+                }
             }
         }
-        // If we can't check time, assume NOT running (conservative approach)
-        // This prevents stale lockfiles from blocking new instances after quit/restart
-        return false;
+
+        return true;
     }
     false
 }
@@ -115,15 +135,36 @@ fn is_gui_running() -> bool {
     let lockfile = gui_lockfile_path();
 
     if let Ok(metadata) = fs::metadata(&lockfile) {
-        if let Ok(modified) = metadata.modified() {
-            if let Ok(elapsed) = modified.elapsed() {
-                // Only consider running if lockfile was touched in last 60 seconds
-                return elapsed.as_secs() < 60;
+        // First check: is the lockfile recent?
+        let is_recent = metadata.modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .map(|e| e.as_secs() < 60)
+            .unwrap_or(false);
+
+        if !is_recent {
+            // Lockfile is stale, clean it up
+            let _ = fs::remove_file(&lockfile);
+            return false;
+        }
+
+        // Second check: is the PID in the lockfile actually running?
+        // Skip this check in Flatpak since PIDs don't translate across sandbox boundary
+        if !service::is_flatpak() {
+            if let Ok(content) = fs::read_to_string(&lockfile) {
+                if let Ok(pid) = content.trim().parse::<u32>() {
+                    // Check if process exists by checking /proc/PID
+                    let proc_path = format!("/proc/{}", pid);
+                    if !std::path::Path::new(&proc_path).exists() {
+                        // Process is dead, clean up stale lockfile
+                        let _ = fs::remove_file(&lockfile);
+                        return false;
+                    }
+                }
             }
         }
-        // If we can't check time, assume NOT running (conservative approach)
-        // This prevents stale lockfiles from blocking new instances after logout/login
-        return false;
+
+        return true;
     }
     false
 }
