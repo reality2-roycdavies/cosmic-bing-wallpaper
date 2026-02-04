@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-02-05
+
+### Fixed
+
+- **Settings Menu in Flatpak**: Fixed "Settings..." menu item not opening GUI
+  - Uses `flatpak-spawn --host` to launch from within sandbox
+  - The `flatpak` binary isn't available inside the sandbox, so must spawn on host
+
+- **Improved Lockfile Detection**: More robust detection of running instances
+  - Added PID validation to verify process is actually running (native only)
+  - Skip PID check in Flatpak since PIDs don't translate across sandbox boundary
+  - Auto-cleanup of stale lockfiles when process is dead
+
+### Changed
+
+- **Code Cleanup**: Consolidated duplicate code and fixed clippy warnings
+  - Removed unused i18n dependencies
+  - Centralized `cleanup_old_wallpapers` and `extract_date_from_filename` in service.rs
+  - Centralized `app_config_dir` in config.rs
+
+---
+
 ## [0.3.4] - 2026-01-27
 
 ### Added

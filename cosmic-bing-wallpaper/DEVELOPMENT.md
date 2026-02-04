@@ -648,6 +648,45 @@ X-GNOME-Autostart-enabled=true
 // But adds complexity for minor feature
 ```
 
+#### Theme 6: Launching Processes from Within Flatpak Sandbox
+
+**The Problem:** The tray's "Settings..." menu item wasn't opening the GUI when running in Flatpak.
+
+**Root Cause:** Inside a Flatpak sandbox, the `flatpak` binary isn't available. Code like this fails silently:
+```rust
+// WRONG - flatpak binary not in sandbox
+Command::new("flatpak")
+    .args(["run", "io.github.app-id"])
+    .spawn()
+```
+
+**The Solution:** Use `flatpak-spawn --host` to execute commands on the host system:
+```rust
+// CORRECT - spawn on host via flatpak-spawn
+Command::new("flatpak-spawn")
+    .args(["--host", "flatpak", "run", "io.github.app-id"])
+    .spawn()
+```
+
+**Related Issue: PID Namespace Isolation**
+
+Lockfile-based process detection also breaks in Flatpak:
+- Inside sandbox, process sees itself as PID 2 (or similar low number)
+- Lockfile contains sandboxed PID (e.g., "2")
+- Host can't validate `/proc/2` - that's a kernel thread, not the app!
+
+**Solution:** Skip PID validation in Flatpak, rely on lockfile age instead:
+```rust
+if !is_flatpak() {
+    // Only validate PID on native installs
+    if let Ok(pid) = lockfile_content.parse::<u32>() {
+        if !Path::new(&format!("/proc/{}", pid)).exists() {
+            // Process dead, clean up lockfile
+        }
+    }
+}
+```
+
 ### Problem-Solving Journey: Flatpak Edition
 
 **Day 1: The Mysterious Missing Icon**

@@ -1,6 +1,6 @@
 [package]
 name = "cosmic-bing-wallpaper"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 authors = ["Roy C. Davies"]
 license = "MIT"
