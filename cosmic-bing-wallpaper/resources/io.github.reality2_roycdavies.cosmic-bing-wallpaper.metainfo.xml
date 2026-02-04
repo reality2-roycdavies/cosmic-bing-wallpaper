@@ -71,6 +71,17 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.3.5" date="2026-02-05">
+      <description>
+        <p>Bug fixes and code cleanup:</p>
+        <ul>
+          <li>Fixed Settings menu not opening from tray in Flatpak</li>
+          <li>Improved lockfile detection with PID validation</li>
+          <li>Code consolidation and cleanup</li>
+          <li>Removed unused dependencies</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.4" date="2026-01-24">
       <description>
         <p>Autostart reliability fix:</p>
