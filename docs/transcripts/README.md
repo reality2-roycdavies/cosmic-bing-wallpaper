@@ -52,6 +52,16 @@ This session covers Flatpak compatibility testing on Pop!_OS after development o
 - **GUI-Tray State Synchronization**: Added D-Bus method for component startup sync
 - **ksni Left-Click Handling**: Library defaults vs platform user expectations
 
+### Part 7: Bug Fixes and Code Cleanup (v0.3.5)
+- **`CONVERSATION-PART7-BUGFIXES.md`** - Readable Markdown version
+
+This session covers documentation auditing, code cleanup, and critical bug fixes:
+- **Documentation Accuracy**: Verified docs match actual code, fixed 5+ discrepancies
+- **Code Consolidation**: Removed duplicate code, unused dependencies (-106 lines)
+- **Settings Menu Fix**: `flatpak-spawn --host` for launching from within sandbox
+- **PID Namespace Isolation**: Lockfile detection can't use PID validation in Flatpak
+- **Silent Failure Anti-Pattern**: Added error logging for spawn failures
+
 ## Format Notes
 
 ### JSONL Files
