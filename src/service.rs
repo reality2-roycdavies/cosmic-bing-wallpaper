@@ -5,8 +5,8 @@
 //!
 //! ## D-Bus Interface
 //!
-//! Service name: `org.cosmicbing.Wallpaper1`
-//! Object path: `/org/cosmicbing/Wallpaper1`
+//! Service name: `io.github.reality2_roycdavies.cosmic-bing-wallpaper.Wallpaper1`
+//! Object path: `/io/github/reality2_roycdavies/cosmic_bing_wallpaper/Wallpaper1`
 //!
 //! ### Methods
 //! - `FetchWallpaper(apply: bool)` - Fetch today's wallpaper, optionally apply it
@@ -60,11 +60,11 @@ fn run_in_tokio<T>(future: impl Future<Output = T>) -> T {
 
 /// D-Bus service name — must be unique on the session bus.
 /// Other applications use this name to find and call our service.
-pub const SERVICE_NAME: &str = "org.cosmicbing.Wallpaper1";
+pub const SERVICE_NAME: &str = "io.github.reality2_roycdavies.cosmic-bing-wallpaper.Wallpaper1";
 
 /// D-Bus object path — the "address" where our interface lives.
 /// Follows the convention of converting dots to slashes.
-pub const OBJECT_PATH: &str = "/org/cosmicbing/Wallpaper1";
+pub const OBJECT_PATH: &str = "/io/github/reality2_roycdavies/cosmic_bing_wallpaper/Wallpaper1";
 
 /// Represents a wallpaper in the download history.
 ///
@@ -135,7 +135,7 @@ impl WallpaperService {
 ///
 /// Signal contexts (`SignalContext`) are automatically injected by zbus
 /// when a method parameter is annotated with `#[zbus(signal_context)]`.
-#[interface(name = "org.cosmicbing.Wallpaper1")]
+#[interface(name = "io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1")]
 impl WallpaperService {
     /// Fetch today's wallpaper from Bing
     ///

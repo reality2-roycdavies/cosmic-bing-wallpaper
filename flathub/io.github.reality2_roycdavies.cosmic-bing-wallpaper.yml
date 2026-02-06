@@ -15,12 +15,10 @@ finish-args:
   - --device=dri
   # Network access for Bing API
   - --share=network
-  # D-Bus service and portal communication
-  - --talk-name=org.freedesktop.portal.*
-  # Allow flatpak-spawn --host to restart cosmic-bg
+  # Allow flatpak-spawn --host to restart cosmic-bg after wallpaper change
   - --talk-name=org.freedesktop.Flatpak
   # Own D-Bus name for the wallpaper service
-  - --own-name=org.cosmicbing.Wallpaper1
+  - --own-name=io.github.reality2_roycdavies.cosmic-bing-wallpaper.Wallpaper1
   # Read/write COSMIC theme and background config
   - --filesystem=~/.config/cosmic:rw
   # App config, timer state, and wallpaper storage

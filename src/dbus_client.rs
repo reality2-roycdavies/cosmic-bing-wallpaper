@@ -33,9 +33,9 @@ use crate::service::{SERVICE_NAME, WallpaperInfo};
 
 /// D-Bus proxy for the wallpaper service
 #[proxy(
-    interface = "org.cosmicbing.Wallpaper1",
-    default_service = "org.cosmicbing.Wallpaper1",
-    default_path = "/org/cosmicbing/Wallpaper1"
+    interface = "io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1",
+    default_service = "io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1",
+    default_path = "/io/github/reality2_roycdavies/cosmic_bing_wallpaper/Wallpaper1"
 )]
 trait WallpaperService {
     /// Fetch today's wallpaper, optionally apply it
