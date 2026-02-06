@@ -1,7 +1,7 @@
 //! # Wallpaper Service Module
 //!
 //! Implements the core wallpaper functionality as a D-Bus service.
-//! This service is embedded in the tray process for Flatpak compatibility.
+//! This service is embedded in the panel applet process.
 //!
 //! ## D-Bus Interface
 //!
@@ -22,60 +22,83 @@
 //! - `TimerStateChanged(enabled: bool)` - Emitted when timer state changes
 //! - `FetchProgress(state: String, message: String)` - Emitted during fetch operations
 
-use std::future::Future;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use zbus::{interface, SignalContext};
+// --- Standard library and async imports ---
+use std::future::Future;    // Trait for async functions (used by run_in_tokio)
+use std::sync::Arc;         // Thread-safe reference counting
+use tokio::sync::RwLock;    // Async read-write lock for shared state
 
-use crate::bing::{self, BingImage};
-use crate::config::Config;
-use crate::timer::InternalTimer;
+// --- D-Bus framework ---
+use zbus::{interface, SignalContext};  // interface = attribute macro, SignalContext = for emitting signals
 
-/// Check if running inside a Flatpak sandbox
+// --- Internal modules ---
+use crate::bing::{self, BingImage};   // Bing API client
+use crate::config::Config;           // User configuration
+use crate::timer::InternalTimer;     // Daily timer
+
+/// Checks if the application is running inside a Flatpak sandbox.
+///
+/// Flatpak creates a `/.flatpak-info` file inside the sandbox. We use this
+/// to decide whether to use `flatpak-spawn --host` for running commands
+/// on the host system (outside the sandbox).
 pub fn is_flatpak() -> bool {
     std::path::Path::new("/.flatpak-info").exists()
 }
 
-/// Helper to run async code that requires tokio runtime (like reqwest)
-/// within the zbus async context which uses a different executor.
+/// Helper to run async code that requires a tokio runtime.
+///
+/// The D-Bus service methods are called by zbus's own async executor,
+/// which is NOT tokio. But our HTTP client (reqwest) requires tokio.
+/// This helper creates a temporary single-threaded tokio runtime to
+/// bridge the gap. Each D-Bus method call gets its own mini-runtime.
 fn run_in_tokio<T>(future: impl Future<Output = T>) -> T {
     let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
+        .enable_all()    // Enable I/O and time drivers
         .build()
         .expect("Failed to create tokio runtime");
     rt.block_on(future)
 }
 
-/// D-Bus service name
+/// D-Bus service name — must be unique on the session bus.
+/// Other applications use this name to find and call our service.
 pub const SERVICE_NAME: &str = "org.cosmicbing.Wallpaper1";
 
-/// D-Bus object path
+/// D-Bus object path — the "address" where our interface lives.
+/// Follows the convention of converting dots to slashes.
 pub const OBJECT_PATH: &str = "/org/cosmicbing/Wallpaper1";
 
-/// Represents a wallpaper in the download history (D-Bus serializable)
+/// Represents a wallpaper in the download history.
+///
+/// This struct is sent over D-Bus (requires zbus::zvariant::Type for serialization)
+/// and also used for JSON serialization (serde::Serialize/Deserialize).
 #[derive(Debug, Clone, zbus::zvariant::Type, serde::Serialize, serde::Deserialize)]
 pub struct WallpaperInfo {
-    /// Full filesystem path to the image
+    /// Full filesystem path to the image (e.g., "/home/user/Pictures/BingWallpapers/bing-en-US-2026-02-05.jpg")
     pub path: String,
-    /// Filename only
+    /// Just the filename (e.g., "bing-en-US-2026-02-05.jpg")
     pub filename: String,
-    /// Date extracted from filename
+    /// Date extracted from the filename (e.g., "2026-02-05")
     pub date: String,
 }
 
-/// Shared service state
+/// Shared mutable state for the wallpaper service.
+///
+/// This is wrapped in `Arc<RwLock<...>>` and shared between:
+/// - The D-Bus service (handles requests from the settings window)
+/// - The timer event handler (triggers automatic fetches)
+/// - The command handler (processes UI requests from the applet popup)
 pub struct ServiceState {
-    /// User configuration
+    /// User configuration (market, wallpaper directory, keep_days, etc.)
     pub config: Config,
-    /// Currently fetched image info
+    /// Metadata for the most recently fetched image (for display/reference)
     pub current_image: Option<BingImage>,
-    /// Path to current image
+    /// Filesystem path to the most recently applied wallpaper
     pub current_path: Option<String>,
-    /// Internal timer reference (shared with tray)
+    /// Reference to the internal timer (shared with the applet for enable/disable)
     pub timer: Arc<InternalTimer>,
 }
 
 impl ServiceState {
+    /// Creates a new ServiceState with default config loaded from disk
     pub fn new(timer: Arc<InternalTimer>) -> Self {
         Self {
             config: Config::load(),
@@ -86,8 +109,15 @@ impl ServiceState {
     }
 }
 
-/// The D-Bus interface implementation
+/// The D-Bus interface implementation.
+///
+/// This struct is registered with zbus and its methods become callable
+/// over D-Bus by other processes (like the settings window).
+/// The `#[interface]` attribute macro on the impl block below
+/// generates the D-Bus interface boilerplate.
 pub struct WallpaperService {
+    /// Shared state — allows the service to read/write the same state
+    /// as the applet's background thread
     state: Arc<RwLock<ServiceState>>,
 }
 
@@ -97,6 +127,14 @@ impl WallpaperService {
     }
 }
 
+/// D-Bus interface implementation.
+///
+/// The `#[interface]` macro makes each method below callable over D-Bus.
+/// Methods marked with `#[zbus(signal)]` become D-Bus signals that clients
+/// can subscribe to for real-time notifications.
+///
+/// Signal contexts (`SignalContext`) are automatically injected by zbus
+/// when a method parameter is annotated with `#[zbus(signal_context)]`.
 #[interface(name = "org.cosmicbing.Wallpaper1")]
 impl WallpaperService {
     /// Fetch today's wallpaper from Bing
@@ -271,7 +309,7 @@ impl WallpaperService {
     /// Delete a wallpaper from history
     async fn delete_wallpaper(&self, path: String) -> zbus::fdo::Result<()> {
         std::fs::remove_file(&path)
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to delete: {}", e)))
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Failed to delete: {e}")))
     }
 
     // === Signals ===
@@ -289,17 +327,26 @@ impl WallpaperService {
     async fn fetch_progress(ctx: &SignalContext<'_>, state: &str, message: &str) -> zbus::Result<()>;
 }
 
-/// Extract date from wallpaper filename (YYYY-MM-DD format)
+/// Extracts the date from a wallpaper filename.
 ///
-/// Looks for a date pattern at the end of the filename before the extension.
-/// Expected format: "bing-{market}-YYYY-MM-DD.jpg"
+/// Filenames follow the pattern "bing-{market}-YYYY-MM-DD.jpg".
+/// This function takes the last 10 characters before the extension
+/// and checks if they match the YYYY-MM-DD pattern.
+///
+/// # Examples
+/// ```ignore
+/// extract_date_from_filename("bing-en-US-2026-02-05.jpg")  // → "2026-02-05"
+/// extract_date_from_filename("unknown.jpg")                 // → "unknown"
+/// ```
 pub fn extract_date_from_filename(filename: &str) -> String {
+    // Strip the file extension (.jpg, .jpeg, or .png)
     let name_without_ext = filename
         .strip_suffix(".jpg")
         .or_else(|| filename.strip_suffix(".jpeg"))
         .or_else(|| filename.strip_suffix(".png"))
         .unwrap_or(filename);
 
+    // Check if the last 10 characters look like a date (YYYY-MM-DD)
     if name_without_ext.len() >= 10 {
         let potential_date = &name_without_ext[name_without_ext.len() - 10..];
         if potential_date.len() == 10
@@ -309,10 +356,14 @@ pub fn extract_date_from_filename(filename: &str) -> String {
             return potential_date.to_string();
         }
     }
+    // Fallback: return the whole name without extension
     name_without_ext.to_string()
 }
 
-/// Scan wallpaper directory for history items
+/// Scans the wallpaper directory for downloaded images and returns them as WallpaperInfo.
+///
+/// This is the D-Bus version (returns WallpaperInfo for serialization over D-Bus).
+/// The settings window has its own version that returns HistoryItems (with PathBuf).
 fn scan_history(wallpaper_dir: &str) -> Vec<WallpaperInfo> {
     let dir = std::path::Path::new(wallpaper_dir);
     if !dir.exists() {
@@ -344,10 +395,17 @@ fn scan_history(wallpaper_dir: &str) -> Vec<WallpaperInfo> {
     items
 }
 
-/// Clean up old wallpapers based on keep_days setting
+/// Removes old wallpapers that are past the retention period.
 ///
-/// Removes bing-*.jpg files older than the specified number of days.
-/// Set keep_days to 0 to disable cleanup (keep forever).
+/// Scans the wallpaper directory for files matching "bing-*.jpg",
+/// parses the date from each filename, and deletes any older than `keep_days`.
+///
+/// # Arguments
+/// * `wallpaper_dir` - Path to the wallpaper storage directory
+/// * `keep_days` - Number of days to keep wallpapers (0 = keep forever)
+///
+/// # Returns
+/// The number of wallpapers deleted
 pub fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
     if keep_days == 0 {
         return 0;
@@ -389,7 +447,15 @@ pub fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
     deleted
 }
 
-/// Run a host command, using flatpak-spawn when in Flatpak sandbox
+/// Runs a command on the host system, automatically handling Flatpak sandboxing.
+///
+/// When running inside Flatpak, commands need to be prefixed with
+/// `flatpak-spawn --host` to execute on the host rather than inside the sandbox.
+/// This helper does that transparently.
+///
+/// # Arguments
+/// * `cmd` - The command to run (e.g., "pkill", "pgrep")
+/// * `args` - Command arguments (e.g., &["-TERM", "-x", "cosmic-bg"])
 fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
     if is_flatpak() {
         let mut spawn_args = vec!["--host", cmd];
@@ -404,7 +470,8 @@ fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::O
     }
 }
 
-/// Spawn a host command in background, using flatpak-spawn when in Flatpak sandbox
+/// Spawns a command in the background on the host system (non-blocking).
+/// Like `run_host_command` but doesn't wait for the command to finish.
 fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
     if is_flatpak() {
         std::process::Command::new("flatpak-spawn")
@@ -416,15 +483,31 @@ fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
     }
 }
 
-/// Apply wallpaper to COSMIC desktop
+/// Applies a wallpaper image to the COSMIC desktop.
+///
+/// COSMIC desktop reads its background configuration from a RON (Rust Object Notation)
+/// file at `~/.config/cosmic/com.system76.CosmicBackground/v1/all`. This function:
+/// 1. Writes the config file with the new image path
+/// 2. Kills the `cosmic-bg` process (COSMIC's background renderer)
+/// 3. COSMIC automatically restarts `cosmic-bg`, which reads the new config
+/// 4. If COSMIC doesn't restart it, we start it manually
+///
+/// # Arguments
+/// * `image_path` - Absolute path to the wallpaper image file
+///
+/// # Why we kill cosmic-bg
+/// COSMIC doesn't have a "reload config" API — the only way to make it
+/// pick up a new wallpaper is to restart the background process.
 pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
-    // Use host's config directory, not Flatpak's sandboxed one
-    // In Flatpak, dirs::config_dir() returns ~/.var/app/APP_ID/config/
-    // but COSMIC reads from ~/.config/
+    // We use home_dir() instead of config_dir() because in Flatpak,
+    // config_dir() returns the sandboxed path (~/.var/app/APP_ID/config/),
+    // but COSMIC reads from the real ~/.config/ on the host.
     let config_path = dirs::home_dir()
         .ok_or("Could not find home directory")?
         .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
 
+    // Write the COSMIC background config in RON format.
+    // RON is Rust's native serialization format, similar to JSON but Rust-flavored.
     let config_content = format!(
         r#"(
     output: "all",
@@ -438,27 +521,30 @@ pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
         image_path
     );
 
+    // Ensure the config directory exists
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create config dir: {}", e))?;
+            .map_err(|e| format!("Failed to create config dir: {e}"))?;
     }
 
-    std::fs::write(&config_path, &config_content)
-        .map_err(|e| format!("Failed to write config: {}", e))?;
+    // Write the config file
+    std::fs::write(&config_path, config_content)
+        .map_err(|e| format!("Failed to write config: {e}"))?;
 
-    // Kill cosmic-bg - COSMIC will auto-restart it with new config
+    // Send SIGTERM to cosmic-bg to trigger a restart with the new config
     let _ = run_host_command("pkill", &["-TERM", "-x", "cosmic-bg"]);
 
-    // Wait for COSMIC to restart cosmic-bg
+    // Give COSMIC a moment to auto-restart cosmic-bg
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    // Check if cosmic-bg is running, start manually if not
+    // Verify cosmic-bg is running; if COSMIC didn't restart it, start it manually
     let check = run_host_command("pgrep", &["-x", "cosmic-bg"]);
     match check {
-        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) if output.status.success() => Ok(()),  // Already running
         _ => {
+            // Not running — start it ourselves
             spawn_host_command("cosmic-bg")
-                .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
+                .map_err(|e| format!("Failed to start cosmic-bg: {e}"))?;
             std::thread::sleep(std::time::Duration::from_millis(500));
             Ok(())
         }

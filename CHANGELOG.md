@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-06
+
+### Changed
+
+- **COSMIC Panel Applet**: Complete architecture conversion from system tray to native COSMIC panel applet
+  - App now lives directly in the COSMIC panel as a native applet
+  - Click the panel icon to open a popup with quick controls
+  - Applet auto-starts with the panel — no autostart entries or lockfiles needed
+  - Settings window launched via popup or `--settings` flag
+
+- **Simplified Architecture**: Removed system tray in favor of panel-native approach
+  - `applet.rs` replaces `tray.rs` — native COSMIC panel integration
+  - `settings.rs` replaces `app.rs` — dedicated settings window
+  - `main.rs` simplified to 3-mode dispatch: applet (default), --settings, --fetch
+  - Background D-Bus service and timer run in a thread within the applet process
+
+### Removed
+
+- **ksni** dependency (StatusNotifierItem/system tray protocol)
+- **notify** dependency (filesystem watching for theme changes)
+- **image** dependency (icon generation)
+- All lockfile management (COSMIC panel manages applet lifecycle)
+- All autostart logic (panel applets auto-start with the panel)
+- Theme file watching and dynamic icon generation (panel handles icon theming)
+- `tray.rs` and `app.rs` source files
+
+---
+
 ## [0.3.5] - 2026-02-05
 
 ### Fixed

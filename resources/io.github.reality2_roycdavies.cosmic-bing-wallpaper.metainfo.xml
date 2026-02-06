@@ -23,9 +23,9 @@
       <li>Preview today's Bing image before applying</li>
       <li>Browse and apply previously downloaded wallpapers</li>
       <li>Choose from 20+ regional Bing markets</li>
-      <li>System tray integration with quick controls</li>
+      <li>Native COSMIC panel applet with quick-access popup</li>
       <li>Automatic daily updates via internal timer</li>
-      <li>Dark/light theme adaptation</li>
+      <li>Full settings window with image preview and history browser</li>
       <li>Lightweight and native - built with libcosmic</li>
     </ul>
     <p>
@@ -59,18 +59,30 @@
 
   <screenshots>
     <screenshot type="default">
-      <caption>Main window showing today's Bing wallpaper with settings</caption>
-      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-bing-wallpaper/main/screenshots/main.png</image>
+      <caption>Panel applet popup and settings window showing today's Bing wallpaper</caption>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-bing-wallpaper/main/screenshots/Screenshot_2026-02-06_20-51-29.png</image>
     </screenshot>
     <screenshot>
       <caption>Wallpaper history browser with apply and delete options</caption>
-      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-bing-wallpaper/main/screenshots/history.png</image>
+      <image type="source">https://raw.githubusercontent.com/reality2-roycdavies/cosmic-bing-wallpaper/main/screenshots/Screenshot_2026-02-06_20-52-11.png</image>
     </screenshot>
   </screenshots>
 
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="0.4.0" date="2026-02-06">
+      <description>
+        <p>Major architecture update - native COSMIC panel applet:</p>
+        <ul>
+          <li>Converted from system tray to native COSMIC panel applet</li>
+          <li>Click panel icon for quick-access popup with controls</li>
+          <li>Dedicated settings window with image preview and history</li>
+          <li>Simplified architecture - no lockfiles or autostart needed</li>
+          <li>Removed ksni, notify, and image dependencies</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.5" date="2026-02-05">
       <description>
         <p>Bug fixes and code cleanup:</p>

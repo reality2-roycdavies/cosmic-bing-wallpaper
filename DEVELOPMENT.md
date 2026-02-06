@@ -4,17 +4,121 @@ This document captures learnings and solutions discovered while developing cosmi
 
 ## Table of Contents
 
-1. [System Tray Implementation](#system-tray-implementation)
-2. [D-Bus Daemon Architecture](#d-bus-daemon-architecture)
-3. [Dark/Light Mode Detection](#darklight-mode-detection)
-4. [Installation and Upgrades](#installation-and-upgrades)
-5. [Problem-Solving Journey](#problem-solving-journey)
-6. [Preparing for Flatpak Distribution](#preparing-for-flatpak-distribution)
-7. [Resources](#resources)
+1. [COSMIC Panel Applet (v0.4.0+)](#cosmic-panel-applet-v040)
+2. [System Tray Implementation (Historical, pre-v0.4.0)](#system-tray-implementation)
+3. [D-Bus Daemon Architecture](#d-bus-daemon-architecture)
+4. [Dark/Light Mode Detection](#darklight-mode-detection)
+5. [Installation and Upgrades](#installation-and-upgrades)
+6. [Problem-Solving Journey](#problem-solving-journey)
+7. [Preparing for Flatpak Distribution](#preparing-for-flatpak-distribution)
+8. [Resources](#resources)
+
+---
+
+## COSMIC Panel Applet (v0.4.0+)
+
+In v0.4.0, the application was converted from a standalone ksni system tray + GUI window architecture to a **native COSMIC panel applet**. This provides tighter desktop integration and removes several dependencies.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│            Panel Applet Process                   │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐ │
+│  │ D-Bus Svc  │  │  Timer     │  │ Panel Icon │ │
+│  │ (service)  │  │ (internal) │  │ + Popup    │ │
+│  └────────────┘  └────────────┘  └────────────┘ │
+└──────────────────────────────────────────────────┘
+        ▲
+        │ D-Bus calls
+┌───────┴───────────┐
+│  Settings Window  │
+│  (D-Bus client)   │
+└───────────────────┘
+```
+
+### Key Implementation Patterns
+
+**Applet entry point:**
+```rust
+pub fn run_applet() -> cosmic::iced::Result {
+    cosmic::applet::run::<BingWallpaperApplet>(())
+}
+```
+
+**Executor types:**
+- Applet: `type Executor = cosmic::SingleThreadExecutor`
+- Settings window: `type Executor = cosmic::executor::Default`
+
+**Background service thread:**
+
+The D-Bus service and timer cannot run on the applet's single-threaded executor. They run in a separate `std::thread` with their own `tokio::runtime::Runtime`, communicating via `std::sync::mpsc` channels:
+
+```rust
+fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Self::Message>) {
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        rt.block_on(run_background_service(cmd_rx, event_tx));
+    });
+    // ...
+}
+```
+
+**Popup rendering:**
+
+COSMIC applets use a closure-based pattern for popup content:
+```rust
+Message::Surface(app_popup::<BingWallpaperApplet>(
+    move |state: &mut BingWallpaperApplet| {
+        // Configure popup settings
+        state.popup = Some(new_id);
+        popup_settings
+    },
+    Some(Box::new(|state: &BingWallpaperApplet| {
+        // Render popup content
+        Element::from(state.core.applet.popup_container(
+            state.popup_content(),
+        ))
+        .map(cosmic::Action::App)
+    })),
+))
+```
+
+**Desktop file for panel registration:**
+```desktop
+[Desktop Entry]
+NoDisplay=true
+X-CosmicApplet=true
+```
+
+The `X-CosmicApplet=true` flag makes the app available in COSMIC's panel applet list. `NoDisplay=true` hides it from application launchers.
+
+### What Was Removed
+
+| Removed | Reason |
+|---------|--------|
+| `ksni` crate | Panel applets don't need SNI protocol |
+| `notify` crate | Panel handles icon theming natively |
+| `image` crate | No icon generation needed |
+| Lockfile management | COSMIC panel manages applet lifecycle |
+| Autostart logic | Panel applets auto-start with the panel |
+| Theme file watching | Panel handles icon theming |
+| `tray.rs`, `app.rs` | Replaced by `applet.rs`, `settings.rs` |
+
+### COSMIC Symbolic Icons
+
+COSMIC panel icons use SVG files with `#232323` fill (not `currentColor`). The panel system recolors these to match the current theme. Icons should be installed to:
+- `hicolor/scalable/apps/` — full-color app icon
+- `hicolor/symbolic/apps/` — symbolic panel icon (16x16 viewBox)
 
 ---
 
 ## System Tray Implementation
+
+> **Note:** This section documents the pre-v0.4.0 system tray architecture using ksni. As of v0.4.0, the app uses a native COSMIC panel applet instead.
 
 ### The Challenge
 
@@ -119,6 +223,8 @@ img.save('icon-on-light.png')
 
 ## D-Bus Daemon Architecture
 
+> **Note:** As of v0.4.0, the D-Bus service is embedded in the panel applet process (see [COSMIC Panel Applet](#cosmic-panel-applet-v040) above). The architecture below documents the evolution through v0.3.x.
+
 ### Why a Daemon?
 
 The original monolithic design had problems:
@@ -126,31 +232,11 @@ The original monolithic design had problems:
 - Timer state was duplicated and could get out of sync
 - No instant synchronization between components
 
-### Architecture
+### Architecture Evolution
 
-The application uses a **tray-with-embedded-service** architecture:
-
-```
-┌──────────────────────────────────────────────────┐
-│               Tray Process                        │
-│  ┌────────────┐  ┌────────┐  ┌───────────────┐  │
-│  │ D-Bus Svc  │  │ Timer  │  │  Tray Icon    │  │
-│  │(service.rs)│  │ (async)│  │  (ksni)       │  │
-│  └────────────┘  └────────┘  └───────────────┘  │
-└──────────────────────────────────────────────────┘
-        ▲
-        │ D-Bus calls (org.cosmicbing.Wallpaper1)
-        │
-┌───────┴────────────────┐
-│  GUI Process           │
-│  (app.rs + dbus_client)│
-│  - UI rendering        │
-│  - User input          │
-│  - D-Bus calls to tray │
-└────────────────────────┘
-```
-
-Note: The previous daemon+clients model used a separate `daemon.rs` process. This was refactored in v0.3.0 to embed the service directly in the tray process for Flatpak compatibility.
+**v0.1.4:** Separate daemon process with systemd services
+**v0.3.0:** D-Bus service embedded in tray process (Flatpak compatibility)
+**v0.4.0:** D-Bus service embedded in panel applet process (native COSMIC integration)
 
 ### D-Bus Interface Definition
 
@@ -795,16 +881,19 @@ dbus-send --session \
 
 ## Resources
 
-### Crates Used
+### Crates Used (v0.4.0+)
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| `ksni` | 0.3 | StatusNotifierItem (system tray) |
+| `libcosmic` | git | COSMIC toolkit with applet support |
 | `zbus` | 4 | D-Bus communication |
-| `notify` | 6 | File system watching |
-| `image` | 0.24 | PNG decoding |
 | `tokio` | 1 | Async runtime |
+| `reqwest` | 0.12 | HTTP client for Bing API |
+| `serde` | 1 | JSON serialization |
 | `dirs` | 6 | Standard directory paths |
+| `chrono` | 0.4 | Date/time handling |
+
+Previously also used (removed in v0.4.0): `ksni` (system tray), `notify` (file watching), `image` (PNG decoding).
 
 ### COSMIC Desktop Internals
 
@@ -814,16 +903,9 @@ dbus-send --session \
 
 ### External Documentation
 
-- [ksni crate docs](https://docs.rs/ksni) - StatusNotifierItem implementation
+- [libcosmic](https://github.com/pop-os/libcosmic) - COSMIC toolkit (applet API)
 - [zbus book](https://dbus2.github.io/zbus/) - Comprehensive D-Bus guide
-- [notify crate docs](https://docs.rs/notify) - Cross-platform file watching
 - [COSMIC Desktop](https://github.com/pop-os/cosmic-epoch) - Desktop environment source
-
-### SNI Protocol Notes
-
-- Icon data format: ARGB (Alpha, Red, Green, Blue) - not RGBA!
-- Network byte order for multi-byte values
-- Icons should be square (common sizes: 22x22, 24x24, 48x48, 64x64)
 
 ---
 

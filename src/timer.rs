@@ -58,14 +58,14 @@ impl TimerState {
 
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create state dir: {}", e))?;
+                .map_err(|e| format!("Failed to create state dir: {e}"))?;
         }
 
         let content = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("Failed to serialize state: {}", e))?;
+            .map_err(|e| format!("Failed to serialize state: {e}"))?;
 
         std::fs::write(path, content)
-            .map_err(|e| format!("Failed to write state: {}", e))?;
+            .map_err(|e| format!("Failed to write state: {e}"))?;
 
         Ok(())
     }

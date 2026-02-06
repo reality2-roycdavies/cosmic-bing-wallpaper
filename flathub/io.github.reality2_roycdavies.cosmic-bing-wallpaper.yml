@@ -44,5 +44,5 @@ modules:
       - install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg /app/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg
     sources:
       - type: dir
-        path: ../cosmic-bing-wallpaper
+        path: ..
       - cargo-sources.json

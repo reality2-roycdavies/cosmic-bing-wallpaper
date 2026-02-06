@@ -35,7 +35,7 @@ fn create_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))
 }
 
 /// Raw API response from Bing.
@@ -77,8 +77,7 @@ pub struct BingImage {
     pub copyright: String,
     /// Image title/description
     pub title: String,
-    /// Feature date (format: YYYYMMDD) - retained for potential future use
-    #[allow(dead_code)]
+    /// Feature date (format: YYYYMMDD) - used in download_image for filename
     pub date: String,
 }
 
@@ -127,14 +126,14 @@ pub async fn fetch_bing_image_info(market: &str) -> Result<BingImage, String> {
             if e.is_timeout() {
                 "Request timed out - check your internet connection".to_string()
             } else {
-                format!("Failed to fetch Bing API: {}", e)
+                format!("Failed to fetch Bing API: {e}")
             }
         })?;
 
     let api_response: BingApiResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse Bing response: {}", e))?;
+        .map_err(|e| format!("Failed to parse Bing response: {e}"))?;
 
     api_response
         .images
@@ -166,7 +165,7 @@ pub async fn download_image(image: &BingImage, wallpaper_dir: &str, market: &str
     // Create wallpaper directory if needed
     let dir = Path::new(wallpaper_dir);
     std::fs::create_dir_all(dir)
-        .map_err(|e| format!("Failed to create wallpaper directory: {}", e))?;
+        .map_err(|e| format!("Failed to create wallpaper directory: {e}"))?;
 
     // Generate filename based on market and Bing's image date (not local date)
     // Bing returns date as YYYYMMDD, convert to YYYY-MM-DD for filename
@@ -194,14 +193,14 @@ pub async fn download_image(image: &BingImage, wallpaper_dir: &str, market: &str
             if e.is_timeout() {
                 "Download timed out - check your internet connection".to_string()
             } else {
-                format!("Failed to download image: {}", e)
+                format!("Failed to download image: {e}")
             }
         })?;
 
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| format!("Failed to read image data: {}", e))?;
+        .map_err(|e| format!("Failed to read image data: {e}"))?;
 
     // Validate that we received an actual image (check magic bytes)
     // JPEG starts with FF D8 FF, PNG starts with 89 50 4E 47
@@ -216,7 +215,7 @@ pub async fn download_image(image: &BingImage, wallpaper_dir: &str, market: &str
 
     // Save to disk
     std::fs::write(&filepath, bytes)
-        .map_err(|e| format!("Failed to save image: {}", e))?;
+        .map_err(|e| format!("Failed to save image: {e}"))?;
 
     Ok(filepath_str)
 }

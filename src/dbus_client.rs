@@ -1,7 +1,7 @@
 //! # D-Bus Client Module
 //!
 //! Provides a high-level client interface for communicating with the wallpaper service.
-//! Used by the GUI application to communicate with the tray process.
+//! Used by the settings window to communicate with the panel applet.
 //!
 //! ## Usage
 //!
@@ -23,7 +23,8 @@
 //! }
 //! ```
 
-// These methods are part of the public API for future GUI integration
+// Some methods are part of the public API but not yet used by the settings window.
+// They are retained for D-Bus client completeness (e.g., external scripts, future use).
 #![allow(dead_code)]
 
 use zbus::{proxy, Connection};
@@ -89,7 +90,7 @@ trait WallpaperService {
     async fn fetch_progress(&self, state: String, message: String) -> zbus::Result<()>;
 }
 
-/// High-level client for the wallpaper service (running in tray)
+/// High-level client for the wallpaper service (running in applet)
 pub struct WallpaperClient {
     proxy: WallpaperServiceProxy<'static>,
 }
@@ -97,7 +98,7 @@ pub struct WallpaperClient {
 impl WallpaperClient {
     /// Connect to the wallpaper service
     ///
-    /// Returns an error if the tray is not running
+    /// Returns an error if the applet is not running
     pub async fn connect() -> zbus::Result<Self> {
         let connection = Connection::session().await?;
         let proxy = WallpaperServiceProxy::new(&connection).await?;
@@ -206,7 +207,7 @@ impl WallpaperClient {
     }
 }
 
-/// Check if the service is available (tray is running and registered on D-Bus)
+/// Check if the service is available (applet is running and registered on D-Bus)
 pub async fn is_service_available() -> bool {
     if let Ok(connection) = Connection::session().await {
         connection

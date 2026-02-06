@@ -22,7 +22,8 @@ This document chronicles the development of cosmic-bing-wallpaper from initial c
 | GUI Toolkit | **libcosmic** | Official COSMIC UI toolkit (wraps Iced) |
 | Async Runtime | **Tokio** | Required by reqwest; battle-tested |
 | HTTP Client | **reqwest** | Popular, async, good JSON support |
-| System Tray | **ksni** | StatusNotifierItem protocol for Linux trays |
+| Panel Applet | **libcosmic** (applet) | Native COSMIC panel integration (v0.4.0+) |
+| System Tray | **ksni** | StatusNotifierItem protocol (removed in v0.4.0) |
 
 ### Architecture Pattern
 
@@ -326,6 +327,43 @@ if timer_check_counter >= 20 {  // 20 × 50ms = 1 second
 }
 ```
 
+### Phase 9: Native COSMIC Panel Applet (v0.4.0)
+
+**Problem:** The system tray (ksni/SNI) approach had accumulated significant complexity:
+- Dynamic icon generation with theme detection
+- Lockfile management for process lifecycle
+- Autostart desktop entries
+- PID namespace issues in Flatpak
+- Dependencies on ksni, notify, and image crates
+
+**Solution:** Convert to a native COSMIC panel applet, following the pattern established by cosmic-runkat.
+
+**Architecture change:**
+```
+Before (v0.3.x - system tray):              After (v0.4.0 - panel applet):
+┌────────────────────┐                       ┌────────────────────┐
+│    Tray Process     │                       │  Panel Applet      │
+│  ksni + D-Bus svc  │                       │  Popup + D-Bus svc │
+│  + timer + notify  │                       │  + timer            │
+│  + lockfiles       │                       │  (no lockfiles!)    │
+└────────────────────┘                       └────────────────────┘
+         ↑ D-Bus                                      ↑ D-Bus
+┌────────┴────────┐                          ┌────────┴────────┐
+│    GUI (app.rs) │                          │ Settings Window  │
+└─────────────────┘                          └─────────────────┘
+```
+
+**Key implementation details:**
+- Applet uses `cosmic::SingleThreadExecutor` (single-threaded)
+- D-Bus service + timer run in a background `std::thread` with its own tokio runtime
+- Communication via `std::sync::mpsc` channels
+- Popup rendered via closure pattern (`app_popup()`)
+- Desktop file marked with `X-CosmicApplet=true` and `NoDisplay=true`
+
+**What was removed:** ksni, notify, image crates; lockfile management; autostart logic; theme file watching; dynamic icon generation. The COSMIC panel handles lifecycle and icon theming natively.
+
+**Files changed:** `tray.rs` → `applet.rs`, `app.rs` → `settings.rs`, `main.rs` simplified
+
 ## Testing Performed
 
 ### Manual Testing
@@ -347,33 +385,27 @@ Throughout development, we performed extensive manual testing:
    # Verified: wallpaper downloads and applies
    ```
 
-4. **System tray testing**
+4. **Panel applet testing (v0.4.0+)**
+   - Add applet to COSMIC panel via Panel Settings → Applets
+   - Verify icon appears in panel
+   - Click icon, verify popup opens with controls
+   - Test fetch button, timer toggle, settings button
+
+5. **Settings window testing**
    ```bash
-   ./cosmic-bing-wallpaper --tray &
-   # Verified: tray icon appears
-   # Tested: all menu items work
+   ./cosmic-bing-wallpaper --settings
+   # Verified: settings window opens
+   # Tested: image preview, history browser, market selector
    ```
 
-5. **Autostart testing**
-   - Log out and log in
-   - Verify tray icon appears automatically
-   - Verify XDG autostart desktop file is created in `~/.config/autostart/`
-
-6. **Internal timer testing**
-   - Enable timer from tray menu
+6. **Timer testing**
+   - Enable timer from panel popup or settings
    - Check config file to verify `timer_enabled: true`
-   - Test timer fires by checking wallpaper updates
+   - Verify timer fires and fetches wallpaper
 
-7. **Timer toggle testing**
-   - Click "Daily Update" in tray menu
-   - Verify icon changes (green tick = on, red cross = off)
-   - Verify GUI reflects the timer state via D-Bus query
-
-8. **AppImage testing**
-   - Build AppImage with `just build-appimage`
-   - Run `./install-appimage.sh --with-tray`
-   - Verify app appears in launcher
-   - Verify tray starts on login
+7. **D-Bus communication testing**
+   - Toggle timer in settings, verify popup reflects change
+   - Fetch wallpaper from popup, verify status updates
 
 ### What We Didn't Test (Future Work)
 
@@ -436,11 +468,13 @@ The `symbolic` suffix tells COSMIC to use theme-appropriate coloring.
 
 9. **RGBA vs ARGB matters** - D-Bus StatusNotifierItem expects ARGB byte order, not RGBA. Getting this wrong produces corrupted icons.
 
-10. **State sync requires architecture** - When multiple components need to share state (GUI, tray), a daemon+clients model with D-Bus provides cleaner synchronization than polling or file-based communication.
+10. **State sync requires architecture** - When multiple components need to share state (applet, settings), a service+clients model with D-Bus provides cleaner synchronization than polling or file-based communication.
 
-11. **Color beats shape at small sizes** - For tray icons at small panel sizes, colored indicators (green tick/red cross) are more visible than monochrome shape differences.
+11. **Native applet beats system tray** - Converting to a native COSMIC panel applet (v0.4.0) eliminated significant complexity (ksni, lockfiles, autostart, theme watching) while providing better desktop integration.
 
-## Project Structure (Final)
+12. **Background threads for async services** - COSMIC's `SingleThreadExecutor` can't run D-Bus services. Use a separate `std::thread` with its own tokio runtime, communicating via `std::sync::mpsc` channels.
+
+## Project Structure (v0.4.0+)
 
 ```
 cosmic-bing-wallpaper/
@@ -456,20 +490,20 @@ cosmic-bing-wallpaper/
 └── cosmic-bing-wallpaper/    # Main Rust project
     ├── Cargo.toml
     ├── CHANGELOG.md          # Version history
-    ├── justfile              # Build/install recipes
+    ├── DEVELOPMENT.md        # Technical reference
     ├── src/
-    │   ├── main.rs           # Entry point, CLI handling
-    │   ├── app.rs            # GUI application (MVU pattern)
+    │   ├── main.rs           # Entry point (applet/settings/fetch)
+    │   ├── applet.rs         # COSMIC panel applet with popup
+    │   ├── settings.rs       # Settings window (full UI)
     │   ├── bing.rs           # Bing API client
     │   ├── config.rs         # Configuration management
-    │   ├── service.rs        # WallpaperService (embedded in tray, exposes D-Bus)
-    │   ├── timer.rs          # Internal timer (replaces systemd timer)
-    │   ├── dbus_client.rs    # D-Bus client proxy for GUI
-    │   └── tray.rs           # System tray with embedded service
+    │   ├── service.rs        # WallpaperService (D-Bus interface)
+    │   ├── timer.rs          # Internal timer for daily updates
+    │   └── dbus_client.rs    # D-Bus client proxy for settings
     └── resources/
-        ├── *.desktop         # Desktop entry files
+        ├── *.desktop         # Desktop entry (X-CosmicApplet)
         ├── *.svg             # Application icons
-        └── icon-*.png        # Tray icons (on/off, dark/light)
+        └── *.metainfo.xml    # AppStream metadata
 ```
 
 ## Tools Used

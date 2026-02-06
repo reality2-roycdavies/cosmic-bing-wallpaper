@@ -74,7 +74,7 @@ You do **not** need to:
 For a solo developer with moderate Rust experience:
 - Learning libcosmic/iced framework: **1-2 weeks**
 - Core application development: **1-2 weeks**
-- System tray implementation: **3-5 days**
+- Panel applet / system tray implementation: **3-5 days**
 - Systemd integration and packaging: **3-5 days**
 - Testing and bug fixing: **1 week**
 - **Total estimate: 4-6 weeks**
@@ -156,27 +156,24 @@ The human becomes an **editor, tester, and director**—roles that require under
 
 ## Overview
 
-This project includes both a simple shell script for quick use and a full native COSMIC GUI application.
+This project includes both a simple shell script for quick use and a native COSMIC panel applet with full settings window.
 
 ## Features
 
-### GUI Application
+### Panel Applet (v0.4.0+)
+- **Native COSMIC Integration**: Lives directly in the COSMIC panel as a native applet
+- **Quick Popup**: Click the panel icon for instant access to controls
+- **Fetch Wallpaper**: Download and apply today's Bing image with one click
+- **Timer Toggle**: Enable/disable daily automatic updates from the popup
+- **Status Display**: Shows timer state and next scheduled update
+
+### Settings Window
 - **Image Preview**: See today's Bing image before applying
 - **History Browser**: Browse and re-apply previously downloaded wallpapers
 - **Region Selector**: Choose from 21 Bing markets (US, UK, Germany, Japan, etc.)
 - **One-click Apply**: Set any image as your desktop wallpaper instantly
-- **Auto-Update Timer**: Enable/disable daily updates directly from the app
+- **Auto-Update Timer**: Enable/disable daily updates directly from settings
 - **Status Display**: Shows next scheduled update time
-
-### System Tray Mode
-- **Background Operation**: Run quietly in the system tray
-- **Quick Access**: Right-click menu for common actions
-- **Fetch Wallpaper**: Download today's image without opening the full app
-- **Open App**: Launch the full GUI when needed
-- **Theme-Aware Icons**: Dynamically generated using COSMIC theme colors (v0.3.4+)
-- **Status Indicators**: Accent-colored tick (enabled) / gray cross (disabled) for visibility (v0.3.4+)
-- **Toggle Timer**: Enable/disable daily updates with instant visual feedback
-- **Instant Sync**: Changes in GUI immediately reflected in tray via D-Bus
 
 ### Shell Script
 - Lightweight alternative for automation
@@ -185,11 +182,11 @@ This project includes both a simple shell script for quick use and a full native
 
 ## Screenshots
 
-![Main Window](screenshots/main.png)
+![Main Window](screenshots/Screenshot_2026-02-06_20-51-29.png)
 
-*Main application window showing today's Bing image, region selector, and auto-update timer controls.*
+*Panel applet popup and settings window showing today's Bing image, region selector, and auto-update timer controls.*
 
-![History Browser](screenshots/history.png)
+![History Browser](screenshots/Screenshot_2026-02-06_20-52-11.png)
 
 *Browse and re-apply previously downloaded wallpapers.*
 
@@ -213,11 +210,8 @@ cd cosmic-bing-wallpaper
 # Build and install the Flatpak (first build takes a while)
 flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
 
-# Run the app
-flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper
-
-# Or start the tray (will auto-start on future logins)
-flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
+# The applet will appear in COSMIC panel's applet list
+# Add it via Panel Settings → Applets
 ```
 
 ### Uninstalling
@@ -228,29 +222,13 @@ flatpak uninstall io.github.reality2_roycdavies.cosmic-bing-wallpaper
 
 ## Automatic Daily Updates
 
-### From the GUI or Tray
+### From the Panel Applet or Settings
 
-1. Open the application (or right-click the tray icon)
+1. Click the applet icon in the panel, or open Settings
 2. Toggle "Daily Update" to enable automatic updates
 3. The wallpaper will automatically update daily at 8:00 AM
 
-The timer runs within the tray process - no systemd services required. This makes the app fully compatible with Flatpak sandboxes.
-
-## System Tray Mode
-
-Run the app in the background with a system tray icon for quick access:
-
-```bash
-flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray
-```
-
-The tray icon provides a right-click menu with:
-- **Fetch Today's Wallpaper**: Download and apply the latest Bing image
-- **Toggle Daily Update**: Enable/disable automatic daily updates
-- **Settings**: Launch the full GUI window
-- **Quit**: Exit the tray application
-
-The tray automatically creates an XDG autostart entry on first run, so it will start on login.
+The timer runs within the applet process - no systemd services required. The applet starts automatically with the COSMIC panel.
 
 ## Configuration
 
@@ -284,24 +262,23 @@ Configuration is stored at `~/.config/cosmic-bing-wallpaper/config.json`:
 
 ```
 cosmic-bing-wallpaper/
+├── Cargo.toml                         # Rust dependencies
 ├── README.md                          # This file
 ├── LICENSE                            # MIT License
 ├── flathub/                           # Flatpak manifest for building
-└── cosmic-bing-wallpaper/             # COSMIC GUI application
-    ├── Cargo.toml                     # Rust dependencies
-    ├── src/
-    │   ├── main.rs                    # Entry point (GUI/Tray modes)
-    │   ├── app.rs                     # COSMIC app (UI + state)
-    │   ├── bing.rs                    # Bing API client
-    │   ├── config.rs                  # Configuration & markets
-    │   ├── service.rs                 # D-Bus service (embedded in tray)
-    │   ├── timer.rs                   # Internal timer for daily updates
-    │   ├── dbus_client.rs             # D-Bus client proxy (for GUI)
-    │   └── tray.rs                    # System tray with embedded service
-    └── resources/
-        ├── *.desktop                  # Desktop entry file
-        ├── *.svg                      # Application icons
-        └── *.metainfo.xml             # AppStream metadata
+├── src/
+│   ├── main.rs                        # Entry point (applet/settings/fetch)
+│   ├── applet.rs                      # COSMIC panel applet with popup
+│   ├── settings.rs                    # Settings window (full UI)
+│   ├── bing.rs                        # Bing API client
+│   ├── config.rs                      # Configuration & markets
+│   ├── service.rs                     # D-Bus service + wallpaper operations
+│   ├── timer.rs                       # Internal timer for daily updates
+│   └── dbus_client.rs                 # D-Bus client proxy (for settings)
+└── resources/
+    ├── *.desktop                      # Desktop entry (X-CosmicApplet)
+    ├── *.svg                          # Application icons
+    └── *.metainfo.xml                 # AppStream metadata
 ```
 
 ## How It Works
@@ -326,103 +303,56 @@ Wallpapers are applied by:
 
 ### Technology Stack
 - **Rust** - Systems programming language
-- **libcosmic** - COSMIC desktop GUI toolkit (based on iced)
+- **libcosmic** - COSMIC desktop toolkit (based on iced) with applet support
 - **tokio** - Async runtime for non-blocking operations
 - **reqwest** - HTTP client for API calls
 - **serde** - JSON serialization/deserialization
-- **zbus** - D-Bus IPC for daemon/client communication
-- **ksni** - StatusNotifierItem (system tray) protocol
-- **notify** - File system watching for theme changes
+- **zbus** - D-Bus IPC for applet/settings communication
 
 ### Architecture
 
-The application uses a **tray-with-embedded-service** architecture for Flatpak compatibility:
+The application uses a **panel applet** architecture with an embedded D-Bus service (v0.4.0+):
 
 ```
 ┌──────────────────────────────────────────────────┐
-│               Tray Process                        │
+│            Panel Applet Process                   │
 │  ┌────────────┐  ┌────────────┐  ┌────────────┐ │
-│  │ D-Bus Svc  │  │  Timer     │  │  Tray Icon │ │
-│  │ (service)  │  │ (internal) │  │  (ksni)    │ │
+│  │ D-Bus Svc  │  │  Timer     │  │ Panel Icon │ │
+│  │ (service)  │  │ (internal) │  │ + Popup    │ │
 │  └────────────┘  └────────────┘  └────────────┘ │
 └──────────────────────────────────────────────────┘
         ▲
         │ D-Bus calls
-┌───────┴───────┐
-│      GUI      │
-│ (D-Bus client)│
-└───────────────┘
+┌───────┴───────────┐
+│  Settings Window  │
+│  (D-Bus client)   │
+└───────────────────┘
 ```
 
 #### Components
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| **Service** | `service.rs` | D-Bus service embedded in tray, managing wallpaper operations and timer control. |
+| **Applet** | `applet.rs` | Native COSMIC panel applet with popup. Embeds D-Bus service and timer. |
+| **Settings** | `settings.rs` | Full settings window with image preview, history browser, region selector. |
+| **Service** | `service.rs` | D-Bus service managing wallpaper operations. |
 | **Timer** | `timer.rs` | Internal async timer for daily updates (no systemd required). |
-| **GUI Client** | `app.rs` | Full application window using libcosmic. Communicates with tray's D-Bus service. |
-| **Tray** | `tray.rs` | System tray with embedded service. Theme-aware icons via inotify file watching. |
-| **D-Bus Client** | `dbus_client.rs` | Proxy for GUI to communicate with tray's service. |
+| **D-Bus Client** | `dbus_client.rs` | Proxy for settings window to communicate with applet. |
 
-#### D-Bus Interface
+#### Key Design Points
 
-The tray exposes `org.cosmicbing.Wallpaper1` with these methods and signals:
-
-**Methods:**
-| Method | Description |
-|--------|-------------|
-| `FetchWallpaper(apply: bool) → WallpaperInfo` | Fetch today's wallpaper, optionally apply |
-| `ApplyWallpaper(path: String)` | Apply a specific wallpaper file |
-| `GetConfig() → String` | Get full config as JSON |
-| `GetMarket() → String` | Get current market code |
-| `SetMarket(market: String)` | Set market code |
-| `GetWallpaperDir() → String` | Get wallpaper storage directory |
-| `GetTimerEnabled() → bool` | Check if daily timer is enabled |
-| `SetTimerEnabled(enabled: bool)` | Enable/disable daily timer |
-| `GetTimerNextRun() → String` | Get next scheduled run time |
-| `GetCurrentWallpaperPath() → String` | Get path of currently applied wallpaper |
-| `GetHistory() → Vec<WallpaperInfo>` | List downloaded wallpapers |
-| `DeleteWallpaper(path: String)` | Delete a wallpaper file |
-
-**Signals:**
-| Signal | Description |
-|--------|-------------|
-| `WallpaperChanged(path, title)` | Emitted when wallpaper is applied |
-| `TimerStateChanged(enabled)` | Emitted when timer state changes |
-| `FetchProgress(state, message)` | Progress updates during fetch |
-
-#### Why This Architecture?
-
-The previous daemon+clients model used systemd for:
-- Running a separate daemon process
-- Timer-based scheduling
-- Auto-starting on login
-
-This didn't work in Flatpak sandboxes. The new architecture:
-- **Embedded service**: D-Bus service runs inside the tray process
-- **Internal timer**: Scheduling handled by async Rust code, not systemd
-- **XDG autostart**: Login startup via standard `.desktop` files
-- **Flatpak compatible**: No systemd dependencies
-
-The GUI follows the Model-View-Update (MVU) pattern:
-- **Model** (`BingWallpaper`): Application state
-- **View** (`view_main`, `view_history`): UI rendering
-- **Update** (`update`): Message handling and state transitions
-
-### System Tray Features (v0.1.4+)
-
-- **Dynamic theme icons**: Icons generated at runtime using COSMIC theme foreground and accent colors
-- **Instant theme detection**: Uses inotify file watching (no polling) on COSMIC's theme config
-- **Status indicators**: Accent-colored tick (timer ON) / gray cross (timer OFF) with white marks
-- **External state sync**: Detects timer changes made by GUI and updates icon accordingly
+- The applet runs as a native COSMIC panel applet (auto-starts with the panel)
+- D-Bus service and timer run in a background thread within the applet process
+- The settings window is a separate process launched via `--settings`
+- No systemd, autostart, or lockfile management needed - COSMIC panel handles lifecycle
 
 ### Technical Documentation
 
-See [cosmic-bing-wallpaper/DEVELOPMENT.md](cosmic-bing-wallpaper/DEVELOPMENT.md) for detailed technical learnings including:
-- System tray implementation challenges and solutions
-- D-Bus daemon architecture
-- Dark/light mode detection
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed technical learnings including:
+- Panel applet implementation (v0.4.0+)
+- D-Bus service architecture
 - COSMIC desktop internals
+- Flatpak compatibility
 
 ## License
 
