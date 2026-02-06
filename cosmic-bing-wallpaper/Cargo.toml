@@ -1,18 +1,15 @@
 [package]
 name = "cosmic-bing-wallpaper"
-version = "0.3.5"
+version = "0.4.0"
 edition = "2021"
 authors = ["Roy C. Davies"]
 license = "MIT"
-description = "Bing Daily Wallpaper manager for COSMIC desktop"
+description = "Bing Daily Wallpaper applet for COSMIC desktop"
 
 [dependencies]
-# COSMIC GUI toolkit
+# COSMIC GUI toolkit (applet mode for panel integration)
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git", default-features = false, features = [
-    "a11y",
-    "tokio",
-    "winit",
-    "wgpu",
+    "applet",
 ] }
 
 # Async runtime
@@ -31,15 +28,8 @@ dirs = "6"
 # Date/time handling
 chrono = "0.4"
 
-# System tray (StatusNotifierItem protocol)
-ksni = "0.3"
-image = "0.24"
-
-# D-Bus IPC for tray/GUI communication
+# D-Bus IPC for applet/settings communication
 zbus = "4"
-
-# File system watching for theme changes
-notify = "6"
 
 [profile.release]
 lto = true

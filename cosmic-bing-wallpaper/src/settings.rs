@@ -1,38 +1,17 @@
-//! # COSMIC Application Module
+//! # Settings Window Module
 //!
-//! Implements the main application using the libcosmic toolkit, following the
-//! Model-View-Update (MVU) architecture pattern.
+//! Implements the full settings/management window using the libcosmic toolkit,
+//! following the Model-View-Update (MVU) architecture pattern.
 //!
-//! ## Architecture Overview
+//! This window is launched via `--settings` from the panel applet.
+//! It communicates with the applet via D-Bus for timer operations.
 //!
-//! The MVU pattern separates the application into three distinct parts:
-//!
-//! - **Model** (`BingWallpaper` struct): Holds all application state including
-//!   configuration, current image, UI state, and timer status.
-//!
-//! - **View** (`view_main`, `view_history`): Pure functions that render the UI
-//!   based on the current model state. Views are rebuilt whenever state changes.
-//!
-//! - **Update** (`update` method): Handles incoming messages, updates the model,
-//!   and returns commands (async tasks) to be executed.
-//!
-//! ## Message Flow
-//!
-//! 1. User interacts with UI (e.g., clicks "Fetch Today's Image")
-//! 2. UI generates a `Message` (e.g., `Message::FetchToday`)
-//! 3. `update()` handles the message, updates state, returns async Task
-//! 4. Task executes (API call, file download, etc.)
-//! 5. Task completion generates another Message with the result
-//! 6. `update()` handles the result message, updates state
-//! 7. View re-renders with new state
-//!
-//! ## COSMIC Desktop Integration
-//!
-//! This app integrates with COSMIC by:
-//! - Writing wallpaper config to `~/.config/cosmic/com.system76.CosmicBackground/v1/all`
-//! - Using RON (Rusty Object Notation) format expected by cosmic-bg
-//! - Restarting cosmic-bg process to apply changes
-//! - Managing automatic updates via internal timer (D-Bus)
+//! ## Features
+//! - Preview today's Bing wallpaper
+//! - Browse and apply previously downloaded wallpapers
+//! - Select regional Bing market
+//! - Enable/disable daily auto-update timer
+//! - Delete old wallpapers
 
 use cosmic::app::Core;
 use cosmic::iced::{Length, ContentFit};
@@ -45,15 +24,11 @@ use crate::config::{Config, MARKETS};
 use crate::dbus_client::WallpaperClient;
 use crate::service::{is_flatpak, cleanup_old_wallpapers, extract_date_from_filename};
 
-/// Unique application identifier for COSMIC.
-/// Used for window identification and desktop integration.
-pub const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-bing-wallpaper";
+/// Unique application identifier for the settings window.
+const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-bing-wallpaper.settings";
 
-/// Main application state struct.
-///
-/// Contains all mutable state for the application including configuration,
-/// UI state, and cached data. This is the "Model" in MVU architecture.
-pub struct BingWallpaper {
+/// Main settings application state struct.
+pub struct SettingsApp {
     /// COSMIC core state (window management, theming, etc.)
     core: Core,
     /// User configuration (market, wallpaper directory, etc.)
@@ -62,17 +37,17 @@ pub struct BingWallpaper {
     current_image: Option<BingImage>,
     /// Local filesystem path to the downloaded image
     image_path: Option<String>,
-    /// Status message displayed to the user (e.g., "Downloading...", "Error: ...")
+    /// Status message displayed to the user
     status_message: String,
     /// True when an async operation is in progress (disables buttons)
     is_loading: bool,
     /// List of previously downloaded wallpapers
     history: Vec<HistoryItem>,
-    /// Index of selected market in the dropdown (maps to MARKETS array)
+    /// Index of selected market in the dropdown
     selected_market_idx: usize,
     /// Current view (Main or History)
     view_mode: ViewMode,
-    /// Pre-computed market names for dropdown (avoids lifetime issues in view)
+    /// Pre-computed market names for dropdown
     market_names: Vec<String>,
     /// Current status of the auto-update timer
     timer_status: TimerStatus,
@@ -81,118 +56,70 @@ pub struct BingWallpaper {
 }
 
 /// Represents a wallpaper in the download history.
-///
-/// Created by scanning the wallpaper directory for image files.
 #[derive(Debug, Clone)]
 pub struct HistoryItem {
-    /// Full filesystem path to the image
     pub path: PathBuf,
-    /// Filename only (e.g., "bing-2026-01-15.jpg")
     pub filename: String,
-    /// Extracted date from filename for display (e.g., "2026-01-15")
     pub date: String,
 }
 
-/// Enum representing the current view/screen of the application.
+/// Current view/screen of the application.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum ViewMode {
-    /// Main view showing today's image and controls
     #[default]
     Main,
-    /// History browser showing all downloaded wallpapers
     History,
 }
 
 /// Status of the auto-update timer.
-///
-/// Checked asynchronously on app startup and after enable/disable operations.
 #[derive(Debug, Clone, Default)]
 pub enum TimerStatus {
-    /// Timer status is being queried
     #[default]
     Checking,
-    /// Timer is not installed (user can install it)
     NotInstalled,
-    /// Timer is active with the next scheduled run time
-    Installed {
-        /// Human-readable next run time
-        next_run: String
-    },
-    /// Error occurred while checking timer status
+    Installed { next_run: String },
     Error(String),
 }
 
-/// All possible messages/events the application can receive.
-///
-/// Messages are the "Update" triggers in MVU architecture. They can be
-/// generated by user interaction, async task completion, or system events.
+/// All possible messages for the settings window.
 #[derive(Debug, Clone)]
 pub enum Message {
     // === Image Fetching ===
-    /// User clicked "Fetch Today's Image" - starts the fetch chain
     FetchToday,
-    /// API call completed - contains image metadata or error
     FetchedImageInfo(Result<BingImage, String>),
-    /// Image download completed - contains file path or error
     DownloadedImage(Result<String, String>),
 
     // === Wallpaper Application ===
-    /// User clicked "Apply" on a history item
     ApplyHistoryWallpaper(PathBuf),
-    /// Wallpaper application completed
     AppliedWallpaper(Result<(), String>),
 
     // === UI Navigation ===
-    /// User selected a different market from dropdown
     MarketSelected(usize),
-    /// Switch to history view
     ShowHistory,
-    /// Switch back to main view
     ShowMain,
-    /// Rescan wallpaper directory for history items
     RefreshHistory,
-    /// Request to delete a wallpaper (shows confirmation)
     RequestDeleteHistoryItem(PathBuf),
-    /// Confirm deletion of pending wallpaper
     ConfirmDeleteHistoryItem,
-    /// Cancel pending deletion
     CancelDeleteHistoryItem,
 
     // === Timer Management ===
-    /// Query timer status via D-Bus
     CheckTimerStatus,
-    /// Timer status query completed
     TimerStatusChecked(TimerStatus),
-    /// User clicked "Install Auto-Update Timer"
     InstallTimer,
-    /// Timer installation completed
     TimerInstalled(Result<(), String>),
-    /// User clicked "Remove Timer"
     UninstallTimer,
-    /// Timer removal completed
     TimerUninstalled(Result<(), String>),
 
     // === State Sync ===
-    /// Sync current wallpaper state from D-Bus service (if tray already fetched)
     SyncCurrentWallpaper,
-    /// Current wallpaper state received from service
     CurrentWallpaperSynced(Option<String>),
 }
 
-/// Implementation of the COSMIC Application trait.
-///
-/// This is where the MVU architecture connects to the COSMIC framework.
-/// The trait requires defining the executor, flags, message type, and
-/// implementing core(), core_mut(), init(), view(), and update().
-impl Application for BingWallpaper {
-    /// Async executor for running Tasks (uses tokio under the hood)
+impl Application for SettingsApp {
     type Executor = cosmic::executor::Default;
-    /// Initialization flags (unused, unit type)
     type Flags = ();
-    /// Message type for the application
     type Message = Message;
 
-    /// Application identifier for COSMIC
     const APP_ID: &'static str = APP_ID;
 
     fn core(&self) -> &Core {
@@ -203,30 +130,15 @@ impl Application for BingWallpaper {
         &mut self.core
     }
 
-    /// Initializes the application state and triggers startup tasks.
-    ///
-    /// Called once when the application starts. Sets up:
-    /// - Configuration loaded from disk (or defaults)
-    /// - Empty image state
-    /// - Wallpaper history scanned from disk
-    /// - Market dropdown options
-    ///
-    /// Automatically triggers two startup actions:
-    /// 1. Fetch today's Bing image
-    /// 2. Check timer status via D-Bus
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let config = Config::load();
 
-        // Find the index of the configured market in MARKETS array
         let selected_market_idx = MARKETS
             .iter()
             .position(|m| m.code == config.market)
             .unwrap_or(0);
 
-        // Scan for existing wallpapers
         let history = scan_history(&config.wallpaper_dir);
-
-        // Pre-compute market names to avoid lifetime issues in view()
         let market_names: Vec<String> = MARKETS.iter().map(|m| m.name.to_string()).collect();
 
         let app = Self {
@@ -244,7 +156,7 @@ impl Application for BingWallpaper {
             pending_delete: None,
         };
 
-        // Trigger startup actions: check timer status, sync current wallpaper from tray, and optionally fetch
+        // Trigger startup actions
         let timer_task = Task::perform(async {}, |_| Action::App(Message::CheckTimerStatus));
         let sync_task = Task::perform(async {}, |_| Action::App(Message::SyncCurrentWallpaper));
 
@@ -261,10 +173,6 @@ impl Application for BingWallpaper {
         vec![]
     }
 
-    /// Renders the UI based on current state.
-    ///
-    /// Delegates to `view_main()` or `view_history()` based on the current
-    /// `view_mode`. This is the "View" in MVU architecture.
     fn view(&self) -> Element<'_, Self::Message> {
         match self.view_mode {
             ViewMode::Main => self.view_main(),
@@ -272,20 +180,11 @@ impl Application for BingWallpaper {
         }
     }
 
-    /// Background subscription that periodically checks timer status.
-    ///
-    /// This allows the app to reflect changes made externally (e.g., from the
-    /// system tray or command line) without requiring manual refresh.
     fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
         cosmic::iced::time::every(std::time::Duration::from_secs(5))
             .map(|_| Message::CheckTimerStatus)
     }
 
-    /// Handles incoming messages and returns tasks to execute.
-    ///
-    /// This is the "Update" in MVU architecture. Each message type has a
-    /// corresponding handler that updates state and optionally returns
-    /// async tasks for operations like API calls or file I/O.
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
         match message {
             Message::FetchToday => {
@@ -325,7 +224,6 @@ impl Application for BingWallpaper {
                     Ok(path) => {
                         self.image_path = Some(path.clone());
 
-                        // Clean up old wallpapers based on keep_days setting
                         let deleted = cleanup_old_wallpapers(&self.config.wallpaper_dir, self.config.keep_days);
                         if deleted > 0 {
                             self.status_message = format!(
@@ -338,7 +236,6 @@ impl Application for BingWallpaper {
 
                         self.history = scan_history(&self.config.wallpaper_dir);
 
-                        // Auto-apply the wallpaper after downloading
                         Task::perform(
                             async move { apply_cosmic_wallpaper(&path).await },
                             |result| Action::App(Message::AppliedWallpaper(result)),
@@ -380,14 +277,14 @@ impl Application for BingWallpaper {
 
             Message::ShowHistory => {
                 self.view_mode = ViewMode::History;
-                self.status_message = String::new(); // Clear status when switching views
+                self.status_message = String::new();
                 self.history = scan_history(&self.config.wallpaper_dir);
                 Task::none()
             }
 
             Message::ShowMain => {
                 self.view_mode = ViewMode::Main;
-                self.status_message = "Ready".to_string(); // Reset status when returning
+                self.status_message = "Ready".to_string();
                 Task::none()
             }
 
@@ -425,13 +322,6 @@ impl Application for BingWallpaper {
             }
 
             Message::CheckTimerStatus => {
-                // Refresh GUI lockfile every 30 seconds (every 6 ticks at 5-second intervals)
-                static TICK_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-                let count = TICK_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if count.is_multiple_of(6) {
-                    crate::create_gui_lockfile();
-                }
-
                 Task::perform(
                     async { check_timer_status().await },
                     |status| Action::App(Message::TimerStatusChecked(status)),
@@ -460,7 +350,6 @@ impl Application for BingWallpaper {
                         self.status_message = format!("Failed to enable Daily Update: {}", e);
                     }
                 }
-                // Refresh timer status
                 Task::perform(
                     async { check_timer_status().await },
                     |status| Action::App(Message::TimerStatusChecked(status)),
@@ -491,10 +380,9 @@ impl Application for BingWallpaper {
             }
 
             Message::SyncCurrentWallpaper => {
-                // Query the D-Bus service for the current wallpaper (in case tray already fetched)
                 Task::perform(
                     async {
-                        match crate::dbus_client::WallpaperClient::connect().await {
+                        match WallpaperClient::connect().await {
                             Ok(client) => {
                                 match client.get_current_wallpaper_path().await {
                                     Ok(path) if !path.is_empty() => Some(path),
@@ -510,7 +398,6 @@ impl Application for BingWallpaper {
 
             Message::CurrentWallpaperSynced(path) => {
                 if let Some(p) = path {
-                    // Only update if we don't already have an image loaded
                     if self.image_path.is_none() {
                         self.image_path = Some(p);
                     }
@@ -521,7 +408,7 @@ impl Application for BingWallpaper {
     }
 }
 
-impl BingWallpaper {
+impl SettingsApp {
     fn apply_wallpaper_from_path(&mut self, path: String) -> Task<Action<Message>> {
         self.status_message = "Applying wallpaper...".to_string();
         self.is_loading = true;
@@ -533,7 +420,6 @@ impl BingWallpaper {
     }
 
     fn view_main(&self) -> Element<'_, Message> {
-        // Today's Wallpaper section - image preview in a card
         let preview_content: Element<_> = if let Some(path) = &self.image_path {
             container(
                 widget::image(path)
@@ -553,13 +439,12 @@ impl BingWallpaper {
 
         let image_title = self.current_image.as_ref()
             .map(|img| img.title.clone())
-            .unwrap_or_else(|| "—".to_string());
+            .unwrap_or_else(|| "\u{2014}".to_string());
 
         let image_copyright = self.current_image.as_ref()
             .map(|img| img.copyright.clone())
-            .unwrap_or_else(|| "—".to_string());
+            .unwrap_or_else(|| "\u{2014}".to_string());
 
-        // Page title (large, like COSMIC Settings)
         let page_title = text::title1("Bing Daily Wallpaper");
 
         let wallpaper_section = settings::section()
@@ -591,7 +476,6 @@ impl BingWallpaper {
                 )
             );
 
-        // Settings section
         let timer_enabled = matches!(&self.timer_status, TimerStatus::Installed { .. });
         let timer_description = match &self.timer_status {
             TimerStatus::Checking => "Checking...".to_string(),
@@ -629,7 +513,6 @@ impl BingWallpaper {
                 )
             );
 
-        // Actions section - below settings
         let fetch_btn = button::suggested("Fetch Today's Wallpaper")
             .on_press_maybe(if self.is_loading { None } else { Some(Message::FetchToday) });
 
@@ -645,7 +528,6 @@ impl BingWallpaper {
                 ])
             );
 
-        // Main content using settings::view_column for proper COSMIC styling
         let content = settings::view_column(vec![
             page_title.into(),
             wallpaper_section.into(),
@@ -707,7 +589,6 @@ impl BingWallpaper {
                 let apply_btn = button::suggested("Apply")
                     .on_press(Message::ApplyHistoryWallpaper(item_path));
 
-                // Show confirm/cancel if this item is pending deletion, otherwise show delete button
                 let is_pending = self.pending_delete.as_ref() == Some(&item.path);
                 let delete_btn: Element<_> = if is_pending {
                     row()
@@ -760,16 +641,7 @@ impl BingWallpaper {
     }
 }
 
-/// Scans the wallpaper directory and returns a list of history items.
-///
-/// Looks for .jpg, .jpeg, and .png files in the specified directory.
-/// Extracts date information from filenames matching the pattern "bing-YYYY-MM-DD.jpg".
-///
-/// # Arguments
-/// * `wallpaper_dir` - Path to the directory containing wallpaper images
-///
-/// # Returns
-/// Vector of `HistoryItem` sorted by date descending (newest first)
+/// Scan wallpaper directory for history items
 fn scan_history(wallpaper_dir: &str) -> Vec<HistoryItem> {
     let dir = std::path::Path::new(wallpaper_dir);
     if !dir.exists() {
@@ -782,7 +654,6 @@ fn scan_history(wallpaper_dir: &str) -> Vec<HistoryItem> {
         .flatten()
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            // Only include image files
             entry.path().extension()
                 .map(|ext| ext == "jpg" || ext == "jpeg" || ext == "png")
                 .unwrap_or(false)
@@ -798,24 +669,17 @@ fn scan_history(wallpaper_dir: &str) -> Vec<HistoryItem> {
         })
         .collect();
 
-    // Sort by date descending (newest first)
     items.sort_by(|a, b| b.date.cmp(&a.date));
     items
 }
 
-/// Queries the tray service for the status of the auto-update timer via D-Bus.
-///
-/// # Returns
-/// - `TimerStatus::Installed` with next run time if timer is enabled
-/// - `TimerStatus::NotInstalled` if timer is disabled
-/// - `TimerStatus::Error` if D-Bus connection fails (tray not running)
+/// Check timer status via D-Bus (communicates with applet)
 async fn check_timer_status() -> TimerStatus {
     match WallpaperClient::connect().await {
         Ok(client) => {
             match client.get_timer_enabled().await {
                 Ok(enabled) => {
                     if enabled {
-                        // Get the next run time
                         let next_run = match client.get_timer_next_run().await {
                             Ok(time) if !time.is_empty() => time,
                             _ => "Scheduled".to_string(),
@@ -829,10 +693,10 @@ async fn check_timer_status() -> TimerStatus {
             }
         }
         Err(_) => {
-            // Tray not running - check timer state file directly
+            // Applet not running - check timer state file directly
             let state = crate::timer::TimerState::load();
             if state.enabled {
-                TimerStatus::Installed { next_run: "Tray not running".to_string() }
+                TimerStatus::Installed { next_run: "Applet not running".to_string() }
             } else {
                 TimerStatus::NotInstalled
             }
@@ -840,15 +704,7 @@ async fn check_timer_status() -> TimerStatus {
     }
 }
 
-/// Enables the auto-update timer via D-Bus to the tray service.
-///
-/// The tray service manages an internal timer that:
-/// - Runs daily at 8:00 AM
-/// - Catches up on missed runs after boot (with 5-minute delay)
-/// - Random delay up to 5 minutes to avoid API hammering
-///
-/// # Errors
-/// Returns error if D-Bus connection fails (tray not running).
+/// Enable timer via D-Bus
 async fn install_timer() -> Result<(), String> {
     match WallpaperClient::connect().await {
         Ok(client) => {
@@ -856,7 +712,6 @@ async fn install_timer() -> Result<(), String> {
                 .map_err(|e| format!("Failed to enable timer: {}", e))
         }
         Err(_) => {
-            // Tray not running - set state directly for next tray start
             let mut state = crate::timer::TimerState::load();
             state.enabled = true;
             state.save()?;
@@ -865,10 +720,7 @@ async fn install_timer() -> Result<(), String> {
     }
 }
 
-/// Disables the auto-update timer via D-Bus to the tray service.
-///
-/// # Errors
-/// Returns error if D-Bus connection fails (tray not running).
+/// Disable timer via D-Bus
 async fn uninstall_timer() -> Result<(), String> {
     match WallpaperClient::connect().await {
         Ok(client) => {
@@ -876,7 +728,6 @@ async fn uninstall_timer() -> Result<(), String> {
                 .map_err(|e| format!("Failed to disable timer: {}", e))
         }
         Err(_) => {
-            // Tray not running - set state directly
             let mut state = crate::timer::TimerState::load();
             state.enabled = false;
             state.save()?;
@@ -885,34 +736,6 @@ async fn uninstall_timer() -> Result<(), String> {
     }
 }
 
-/// Sets a wallpaper image in the COSMIC desktop environment.
-///
-/// This works by:
-/// 1. Writing the COSMIC background configuration in RON format
-/// 2. Restarting the cosmic-bg process to apply the change
-///
-/// ## Configuration File
-/// The config is written to:
-/// `~/.config/cosmic/com.system76.CosmicBackground/v1/all`
-///
-/// ## RON Format
-/// COSMIC uses RON (Rusty Object Notation) for configuration. The wallpaper
-/// config specifies:
-/// - `output: "all"` - Apply to all monitors
-/// - `source: Path(...)` - Path to the image file
-/// - `scaling_mode: Zoom` - Fill the screen, cropping if necessary
-/// - `filter_method: Lanczos` - High-quality image scaling
-///
-/// ## Process Management
-/// The function kills cosmic-bg, waits briefly, then restarts it if needed.
-/// This ensures the new wallpaper is applied immediately.
-///
-/// # Arguments
-/// * `image_path` - Absolute path to the wallpaper image file
-///
-/// # Errors
-/// Returns error if config directory cannot be determined, directory creation
-/// fails, file write fails, or cosmic-bg cannot be started.
 /// Run a host command, using flatpak-spawn when in Flatpak sandbox
 async fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
     if is_flatpak() {
@@ -930,7 +753,7 @@ async fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::proc
     }
 }
 
-/// Spawn a host command in background, using flatpak-spawn when in Flatpak sandbox
+/// Spawn a host command in background
 async fn spawn_host_command(cmd: &str) -> std::io::Result<tokio::process::Child> {
     if is_flatpak() {
         tokio::process::Command::new("flatpak-spawn")
@@ -942,15 +765,12 @@ async fn spawn_host_command(cmd: &str) -> std::io::Result<tokio::process::Child>
     }
 }
 
+/// Apply wallpaper to COSMIC desktop
 async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
-    // Use host's config directory, not Flatpak's sandboxed one
-    // In Flatpak, dirs::config_dir() returns ~/.var/app/APP_ID/config/
-    // but COSMIC reads from ~/.config/
     let config_path = dirs::home_dir()
         .ok_or("Could not find home directory")?
         .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
 
-    // Build RON configuration for cosmic-bg
     let config_content = format!(
         r#"(
     output: "all",
@@ -964,39 +784,42 @@ async fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
         image_path
     );
 
-    // Ensure config directory exists
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create config dir: {}", e))?;
     }
 
-    // Write the configuration file
     std::fs::write(&config_path, config_content)
         .map_err(|e| format!("Failed to write config: {}", e))?;
 
-    // Kill cosmic-bg to force config reload (use host command in Flatpak)
     let _ = run_host_command("pkill", &["-x", "cosmic-bg"]).await;
-
-    // Wait for process to fully terminate
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    // Always restart cosmic-bg to ensure the new wallpaper is loaded
     spawn_host_command("cosmic-bg").await
         .map_err(|e| format!("Failed to start cosmic-bg: {}", e))?;
 
-    // Wait a moment and verify cosmic-bg is running
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
     let check = run_host_command("pgrep", &["-x", "cosmic-bg"]).await;
-
     match check {
         Ok(output) if output.status.success() => Ok(()),
         _ => Err("cosmic-bg failed to start - wallpaper may not have been applied".to_string())
     }
 }
+
 /// Public wrapper for headless wallpaper application.
-///
-/// Used by the CLI `--fetch` mode and internal timer.
 pub async fn apply_wallpaper_headless(image_path: &str) -> Result<(), String> {
     apply_cosmic_wallpaper(image_path).await
+}
+
+/// Run the settings application
+pub fn run_settings() -> cosmic::iced::Result {
+    let settings = cosmic::app::Settings::default()
+        .size(cosmic::iced::Size::new(850.0, 750.0))
+        .size_limits(
+            cosmic::iced::Limits::NONE
+                .min_width(600.0)
+                .min_height(550.0)
+        );
+    cosmic::app::run::<SettingsApp>(settings, ())
 }

@@ -15,8 +15,7 @@ finish-args:
   - --device=dri
   # Network access for Bing API
   - --share=network
-  # System tray and D-Bus service communication
-  - --talk-name=org.kde.StatusNotifierWatcher
+  # D-Bus service and portal communication
   - --talk-name=org.freedesktop.portal.*
   # Allow flatpak-spawn --host to restart cosmic-bg
   - --talk-name=org.freedesktop.Flatpak
@@ -27,8 +26,6 @@ finish-args:
   # App config, timer state, and wallpaper storage
   - --filesystem=~/.config/cosmic-bing-wallpaper:create
   - --filesystem=~/Pictures/BingWallpapers:create
-  # Autostart entry
-  - --filesystem=~/.config/autostart:create
 
 modules:
   - name: cosmic-bing-wallpaper

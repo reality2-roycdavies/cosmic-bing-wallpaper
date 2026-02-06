@@ -1,328 +1,69 @@
 //! # Cosmic Bing Wallpaper
 //!
-//! A COSMIC desktop application that fetches and sets Microsoft Bing's daily
-//! wallpaper images. Built using the libcosmic toolkit (based on iced).
+//! A COSMIC desktop panel applet that fetches and sets Microsoft Bing's daily
+//! wallpaper images. Built using the libcosmic toolkit.
 //!
 //! ## Features
 //! - Fetches today's Bing image from multiple regional markets
 //! - Previews images before applying as wallpaper
 //! - Maintains a history of downloaded wallpapers
-//! - Internal timer for automatic daily updates (Flatpak-friendly)
-//! - System tray icon for background operation
-//! - D-Bus service for IPC between GUI and tray components
+//! - Internal timer for automatic daily updates
+//! - Native COSMIC panel applet integration
+//! - D-Bus service for IPC between applet and settings window
 //!
-//! ## Architecture (Flatpak-friendly)
-//! The tray process owns the wallpaper service and timer:
+//! ## Architecture
+//! The applet process runs in the COSMIC panel and owns the wallpaper service:
 //!
-//! - `service.rs` - Wallpaper service (embedded in tray, exposes D-Bus interface)
-//! - `timer.rs` - Internal timer (replaces systemd timer)
-//! - `dbus_client.rs` - Client proxy for GUI to communicate with tray
-//! - `app.rs` - GUI application using libcosmic (MVU pattern)
-//! - `tray.rs` - System tray icon with embedded service
+//! - `applet.rs` - COSMIC panel applet with popup controls
+//! - `settings.rs` - Full settings window (launched via --settings)
+//! - `service.rs` - Wallpaper service (embedded in applet, exposes D-Bus interface)
+//! - `timer.rs` - Internal timer for scheduled fetches
+//! - `dbus_client.rs` - Client proxy for settings window to communicate with applet
 //! - `bing.rs` - Bing API client for fetching image metadata and downloading
 //! - `config.rs` - User configuration and regional market definitions
 //!
 //! ## CLI Usage
-//! - No arguments: Start tray + open GUI
-//! - `--tray`: Run in system tray only (for autostart)
-//! - `--fetch`: CLI fetch and apply (one-shot, no tray)
-//! - `--help`: Show help message
+//! - No arguments: Run as COSMIC panel applet
+//! - `--settings`, `-s`: Open the settings window
+//! - `--fetch`, `-f`: CLI fetch and apply (one-shot)
+//! - `--help`, `-h`: Show help message
 //!
 //! ## Created with Claude
 //! This project was created collaboratively with Claude (Anthropic's AI assistant)
 //! using Claude Code as a demonstration of AI-assisted software development.
 
-mod app;
+mod applet;
 mod config;
 mod bing;
-mod tray;
+mod settings;
 mod service;
 mod timer;
 mod dbus_client;
 
-use app::BingWallpaper;
-use cosmic::iced::Size;
-use std::fs;
-use std::io::Write;
-use std::process::Command;
-
-/// Get the app config directory path
-/// In Flatpak, we use the exposed host config directory rather than XDG_CONFIG_HOME
-/// because we have --filesystem=~/.config/cosmic-bing-wallpaper:create permission
-fn app_config_dir() -> std::path::PathBuf {
-    if service::is_flatpak() {
-        // In Flatpak, use the exposed host config directory
-        dirs::home_dir()
-            .map(|h| h.join(".config/cosmic-bing-wallpaper"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-bing-wallpaper"))
-    } else {
-        // Native: use standard XDG config directory
-        dirs::config_dir()
-            .map(|d| d.join("cosmic-bing-wallpaper"))
-            .unwrap_or_else(|| std::path::PathBuf::from("/tmp/cosmic-bing-wallpaper"))
-    }
-}
-
-/// Get the path to the tray lockfile
-fn tray_lockfile_path() -> std::path::PathBuf {
-    app_config_dir().join("tray.lock")
-}
-
-/// Get the path to the GUI lockfile
-fn gui_lockfile_path() -> std::path::PathBuf {
-    app_config_dir().join("gui.lock")
-}
-
-/// Check if the tray is already running using a lockfile
-/// In Flatpak, we can't check /proc/PID due to PID namespace isolation,
-/// so we just check if the lockfile exists (with a timestamp check for stale files)
-fn is_tray_running() -> bool {
-    let lockfile = tray_lockfile_path();
-
-    if let Ok(metadata) = fs::metadata(&lockfile) {
-        // First check: is the lockfile recent?
-        let is_recent = metadata.modified()
-            .ok()
-            .and_then(|m| m.elapsed().ok())
-            .map(|e| e.as_secs() < 60)
-            .unwrap_or(false);
-
-        if !is_recent {
-            // Lockfile is stale, clean it up
-            let _ = fs::remove_file(&lockfile);
-            return false;
-        }
-
-        // Second check: is the PID in the lockfile actually running?
-        // Skip this check in Flatpak since PIDs don't translate across sandbox boundary
-        if !service::is_flatpak() {
-            if let Ok(content) = fs::read_to_string(&lockfile) {
-                if let Ok(pid) = content.trim().parse::<u32>() {
-                    // Check if process exists by checking /proc/PID
-                    let proc_path = format!("/proc/{}", pid);
-                    if !std::path::Path::new(&proc_path).exists() {
-                        // Process is dead, clean up stale lockfile
-                        let _ = fs::remove_file(&lockfile);
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-    false
-}
-
-/// Create a lockfile to indicate the tray is running
-pub fn create_tray_lockfile() {
-    let lockfile = tray_lockfile_path();
-    if let Some(parent) = lockfile.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = fs::File::create(&lockfile) {
-        let _ = write!(file, "{}", std::process::id());
-    }
-}
-
-/// Remove the lockfile when tray exits
-pub fn remove_tray_lockfile() {
-    let _ = fs::remove_file(tray_lockfile_path());
-}
-
-/// Check if the GUI is already running
-fn is_gui_running() -> bool {
-    let lockfile = gui_lockfile_path();
-
-    if let Ok(metadata) = fs::metadata(&lockfile) {
-        // First check: is the lockfile recent?
-        let is_recent = metadata.modified()
-            .ok()
-            .and_then(|m| m.elapsed().ok())
-            .map(|e| e.as_secs() < 60)
-            .unwrap_or(false);
-
-        if !is_recent {
-            // Lockfile is stale, clean it up
-            let _ = fs::remove_file(&lockfile);
-            return false;
-        }
-
-        // Second check: is the PID in the lockfile actually running?
-        // Skip this check in Flatpak since PIDs don't translate across sandbox boundary
-        if !service::is_flatpak() {
-            if let Ok(content) = fs::read_to_string(&lockfile) {
-                if let Ok(pid) = content.trim().parse::<u32>() {
-                    // Check if process exists by checking /proc/PID
-                    let proc_path = format!("/proc/{}", pid);
-                    if !std::path::Path::new(&proc_path).exists() {
-                        // Process is dead, clean up stale lockfile
-                        let _ = fs::remove_file(&lockfile);
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-    false
-}
-
-/// Clean up stale lockfiles from previous sessions
-/// Called at startup to prevent orphaned lockfiles from blocking new instances
-pub fn cleanup_stale_lockfiles() {
-    // Clean up stale GUI lockfile
-    let gui_lockfile = gui_lockfile_path();
-    cleanup_single_lockfile(&gui_lockfile, "GUI");
-
-    // Clean up stale tray lockfile
-    let tray_lockfile = tray_lockfile_path();
-    cleanup_single_lockfile(&tray_lockfile, "tray");
-}
-
-/// Get system boot time as seconds since Unix epoch
-fn get_boot_time() -> Option<u64> {
-    let stat = fs::read_to_string("/proc/stat").ok()?;
-    for line in stat.lines() {
-        if line.starts_with("btime ") {
-            return line.split_whitespace().nth(1)?.parse().ok();
-        }
-    }
-    None
-}
-
-/// Helper to clean up a single stale lockfile
-fn cleanup_single_lockfile(lockfile: &std::path::Path, name: &str) {
-    if let Ok(metadata) = fs::metadata(lockfile) {
-        if let Ok(modified) = metadata.modified() {
-            // Check if lockfile is from before the current boot
-            if let Some(boot_time) = get_boot_time() {
-                if let Ok(modified_unix) = modified.duration_since(std::time::UNIX_EPOCH) {
-                    if modified_unix.as_secs() < boot_time {
-                        let _ = fs::remove_file(lockfile);
-                        eprintln!("Cleaned up {} lockfile from previous boot", name);
-                        return;
-                    }
-                }
-            }
-
-            // Also check elapsed time (60 second threshold for same-boot stale files)
-            if let Ok(elapsed) = modified.elapsed() {
-                if elapsed.as_secs() >= 60 {
-                    let _ = fs::remove_file(lockfile);
-                    eprintln!("Cleaned up stale {} lockfile", name);
-                }
-            }
-        } else {
-            // Can't check modification time - remove it to be safe
-            let _ = fs::remove_file(lockfile);
-            eprintln!("Removed {} lockfile with unreadable metadata", name);
-        }
-    }
-}
-
-/// Create a lockfile to indicate the GUI is running
-pub fn create_gui_lockfile() {
-    let lockfile = gui_lockfile_path();
-    if let Some(parent) = lockfile.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = fs::File::create(&lockfile) {
-        let _ = write!(file, "{}", std::process::id());
-    }
-}
-
-/// Remove the GUI lockfile when app exits
-pub fn remove_gui_lockfile() {
-    let _ = fs::remove_file(gui_lockfile_path());
-}
-
-/// Ensure autostart entry exists for the tray
-/// Creates an XDG autostart desktop file so the tray starts on login
-fn ensure_autostart() {
-    let autostart_dir = if service::is_flatpak() {
-        // In Flatpak, write to the host's autostart directory
-        dirs::home_dir().map(|h| h.join(".config/autostart"))
-    } else {
-        dirs::config_dir().map(|d| d.join("autostart"))
-    };
-
-    let Some(autostart_dir) = autostart_dir else {
-        return;
-    };
-
-    let desktop_file = autostart_dir.join("io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop");
-
-    // Only create if it doesn't exist (don't overwrite user modifications)
-    if desktop_file.exists() {
-        return;
-    }
-
-    let _ = fs::create_dir_all(&autostart_dir);
-
-    let exec_cmd = if service::is_flatpak() {
-        "flatpak run io.github.reality2_roycdavies.cosmic-bing-wallpaper --tray"
-    } else {
-        "cosmic-bing-wallpaper --tray"
-    };
-
-    let content = format!(
-        r#"[Desktop Entry]
-Type=Application
-Name=Bing Wallpaper
-Comment=Bing Daily Wallpaper system tray
-Exec={exec_cmd}
-Icon=io.github.reality2_roycdavies.cosmic-bing-wallpaper
-Terminal=false
-Categories=Utility;
-X-GNOME-Autostart-enabled=true
-"#
-    );
-
-    let _ = fs::write(&desktop_file, content);
-}
-
 /// Application entry point.
 ///
 /// Supports three modes:
-/// 1. Default: Start tray (if not running) + open GUI
-/// 2. Tray mode (`--tray`): Run in system tray only (for autostart)
+/// 1. Default: Run as COSMIC panel applet
+/// 2. Settings mode (`--settings`): Open the settings/management window
 /// 3. CLI mode (`--fetch`): Headless fetch and apply (one-shot)
 fn main() -> cosmic::iced::Result {
     let args: Vec<String> = std::env::args().collect();
 
-    // Check for CLI arguments
     if args.len() > 1 {
         match args[1].as_str() {
-            "--tray" | "-t" => {
-                // Clean up any stale lockfiles from previous sessions
-                cleanup_stale_lockfiles();
-
-                // Check if tray is already running
-                if is_tray_running() {
-                    println!("Bing Wallpaper tray is already running.");
-                    return Ok(());
-                }
-                // Run in system tray mode (background) - this includes D-Bus service
-                println!("Starting Bing Wallpaper tray with D-Bus service...");
-                ensure_autostart();
-                create_tray_lockfile();
-                let result = tray::run_tray();
-                remove_tray_lockfile();
-                if let Err(e) = result {
-                    eprintln!("Tray error: {}", e);
-                    std::process::exit(1);
-                }
-                return Ok(());
+            "--settings" | "-s" => {
+                settings::run_settings()
             }
             "--fetch-and-apply" | "--fetch" | "-f" => {
-                // Run in headless mode (one-shot fetch and apply)
-                return run_headless();
+                run_headless()
             }
             "--help" | "-h" => {
                 print_help(&args[0]);
-                return Ok(());
+                Ok(())
+            }
+            "--version" | "-v" => {
+                println!("cosmic-bing-wallpaper {}", env!("CARGO_PKG_VERSION"));
+                Ok(())
             }
             _ => {
                 eprintln!("Unknown argument: {}", args[1]);
@@ -330,42 +71,10 @@ fn main() -> cosmic::iced::Result {
                 std::process::exit(1);
             }
         }
+    } else {
+        // Default: run as COSMIC panel applet
+        applet::run_applet()
     }
-
-    // Default: Smart mode - start tray if not running, then launch GUI
-    // Clean up any stale lockfiles from previous sessions first
-    cleanup_stale_lockfiles();
-
-    if is_gui_running() {
-        println!("Bing Wallpaper is already open.");
-        return Ok(());
-    }
-
-    if !is_tray_running() {
-        println!("Starting Bing Wallpaper tray in background...");
-        if let Err(e) = Command::new(std::env::current_exe().unwrap_or_else(|_| "cosmic-bing-wallpaper".into()))
-            .arg("--tray")
-            .spawn()
-        {
-            eprintln!("Warning: Failed to start tray: {}", e);
-        }
-        // Give tray time to initialize
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
-
-    // Launch GUI with lockfile management
-    create_gui_lockfile();
-    let settings = cosmic::app::Settings::default()
-        .size(Size::new(850.0, 750.0))
-        .size_limits(
-            cosmic::iced::Limits::NONE
-                .min_width(600.0)
-                .min_height(550.0)
-        );
-
-    let result = cosmic::app::run::<BingWallpaper>(settings, ());
-    remove_gui_lockfile();
-    result
 }
 
 /// Prints help message
@@ -373,15 +82,14 @@ fn print_help(program: &str) {
     println!("Bing Wallpaper for COSMIC Desktop\n");
     println!("Usage: {} [OPTIONS]\n", program);
     println!("Options:");
-    println!("  (none)             Start tray (if needed) + open GUI");
-    println!("  --tray, -t         Run in system tray only (for autostart)");
+    println!("  (none)             Run as COSMIC panel applet");
+    println!("  --settings, -s     Open the settings window");
     println!("  --fetch, -f        Fetch and apply wallpaper (one-shot, no GUI)");
+    println!("  --version, -v      Show version information");
     println!("  --help, -h         Show this help message");
     println!();
-    println!("The tray process runs the D-Bus service and manages the internal timer.");
-    println!("The GUI connects to the tray via D-Bus for wallpaper operations.");
-    println!();
-    println!("For autostart, add the --tray argument to your session startup.");
+    println!("The applet runs in the COSMIC panel with D-Bus service and timer.");
+    println!("The settings window connects to the applet via D-Bus.");
 }
 
 /// Maximum number of retry attempts for network operations
@@ -405,30 +113,26 @@ fn run_headless() -> cosmic::iced::Result {
 
         println!("Fetching Bing image for market: {}", config.market);
 
-        // Retry loop with exponential backoff
         let mut last_error = String::new();
         for attempt in 0..MAX_RETRIES {
             if attempt > 0 {
-                let delay = INITIAL_RETRY_DELAY_SECS * (1 << (attempt - 1)); // 10s, 20s, 40s
+                let delay = INITIAL_RETRY_DELAY_SECS * (1 << (attempt - 1));
                 println!("Retry {} of {} in {} seconds...", attempt, MAX_RETRIES - 1, delay);
                 tokio::time::sleep(Duration::from_secs(delay)).await;
             }
 
-            // Fetch image info
             match bing::fetch_bing_image_info(&config.market).await {
                 Ok(image) => {
                     println!("Found: {}", image.title);
 
-                    // Download image
                     match bing::download_image(&image, &config.wallpaper_dir, &config.market).await {
                         Ok(path) => {
                             println!("Downloaded to: {}", path);
 
-                            // Apply wallpaper
-                            match app::apply_wallpaper_headless(&path).await {
+                            match settings::apply_wallpaper_headless(&path).await {
                                 Ok(()) => {
                                     println!("Wallpaper applied successfully!");
-                                    return; // Success - exit retry loop
+                                    return;
                                 }
                                 Err(e) => {
                                     last_error = format!("Failed to apply wallpaper: {}", e);
@@ -449,7 +153,6 @@ fn run_headless() -> cosmic::iced::Result {
             }
         }
 
-        // All retries exhausted
         eprintln!("All {} attempts failed. Last error: {}", MAX_RETRIES, last_error);
     });
 

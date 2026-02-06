@@ -1,12 +1,11 @@
 [Desktop Entry]
 Name=Bing Wallpaper
 Comment=Bing Daily Wallpaper for COSMIC desktop
-GenericName=Wallpaper Manager
 Exec=cosmic-bing-wallpaper
 Icon=io.github.reality2_roycdavies.cosmic-bing-wallpaper
 Terminal=false
 Type=Application
 Categories=Settings;DesktopSettings;
-Keywords=wallpaper;bing;background;desktop;cosmic;daily;
-StartupNotify=true
 OnlyShowIn=COSMIC;
+NoDisplay=true
+X-CosmicApplet=true
