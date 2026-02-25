@@ -292,7 +292,10 @@ impl cosmic::Application for BingWallpaperApplet {
             Message::OpenSettings => {
                 // Launch the settings window as a separate process.
                 std::thread::spawn(|| {
-                    // Try the unified settings app first
+                    // Don't spawn a second instance if already running
+                    if let Ok(output) = std::process::Command::new("pgrep").arg("-f").arg("cosmic-applet-settings").output() {
+                        if output.status.success() { return; }
+                    }
                     let result = std::process::Command::new("cosmic-applet-settings")
                         .arg("bing-wallpaper")
                         .spawn();
