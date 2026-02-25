@@ -35,13 +35,14 @@
 // --- Module declarations ---
 // Each `mod` statement tells Rust to include the corresponding .rs file as part of this crate.
 
-mod applet;      // COSMIC panel applet (lives in the panel bar, shows popup on click)
-mod config;      // User configuration and Bing market definitions
-mod bing;        // Bing API client (fetches image metadata and downloads images)
-mod settings;    // Full settings window (launched via --settings)
-mod service;     // D-Bus service + wallpaper apply logic (embedded in the applet)
-mod timer;       // Internal daily timer for automatic wallpaper updates
-mod dbus_client; // D-Bus client proxy (used by settings window to talk to the applet)
+mod applet;         // COSMIC panel applet (lives in the panel bar, shows popup on click)
+mod config;         // User configuration and Bing market definitions
+mod bing;           // Bing API client (fetches image metadata and downloads images)
+mod settings;       // Full settings window (launched via --settings)
+mod settings_page;  // Embeddable settings page (used by cosmic-applet-settings)
+mod service;        // D-Bus service + wallpaper apply logic (embedded in the applet)
+mod timer;          // Internal daily timer for automatic wallpaper updates
+mod dbus_client;    // D-Bus client proxy (used by settings window to talk to the applet)
 
 /// Application entry point — dispatches to the appropriate mode based on CLI arguments.
 ///

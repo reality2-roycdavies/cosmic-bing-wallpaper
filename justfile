@@ -50,7 +50,7 @@ install-local:
     echo "Stopping any running instances..."
     systemctl --user stop cosmic-bing-wallpaper-daemon.service 2>/dev/null || true
     systemctl --user stop cosmic-bing-wallpaper-tray.service 2>/dev/null || true
-    pkill -f "cosmic-bing-wallpaper" 2>/dev/null || true
+    pkill -x "cosmic-bing-wallpaper" 2>/dev/null || true
     sleep 1
 
     # Install binary (remove old first)

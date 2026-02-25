@@ -6,6 +6,14 @@ authors = ["Roy C. Davies"]
 license = "MIT"
 description = "Bing Daily Wallpaper applet for COSMIC desktop"
 
+[lib]
+name = "cosmic_bing_wallpaper"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cosmic-bing-wallpaper"
+path = "src/main.rs"
+
 [dependencies]
 # COSMIC GUI toolkit (applet mode for panel integration)
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git", default-features = false, features = [
