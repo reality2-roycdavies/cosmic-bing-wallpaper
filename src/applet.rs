@@ -291,28 +291,31 @@ impl cosmic::Application for BingWallpaperApplet {
 
             Message::OpenSettings => {
                 // Launch the settings window as a separate process.
-                // We spawn a new thread to avoid blocking the UI while the process starts.
                 std::thread::spawn(|| {
-                    // In Flatpak, we need to use flatpak-spawn to escape the sandbox
-                    // and launch a new Flatpak instance with the --settings flag.
-                    let result = if is_flatpak() {
-                        std::process::Command::new("flatpak-spawn")
-                            .args([
-                                "--host",     // Run on the host, not inside our sandbox
-                                "flatpak",
-                                "run",
-                                "io.github.reality2_roycdavies.cosmic-bing-wallpaper",
-                                "--settings",
-                            ])
-                            .spawn()
-                    } else {
-                        // Native install: just run our own executable with --settings
-                        let exe = std::env::current_exe()
-                            .unwrap_or_else(|_| "cosmic-bing-wallpaper".into());
-                        std::process::Command::new(exe).arg("--settings").spawn()
-                    };
-                    if let Err(e) = result {
-                        eprintln!("Failed to launch settings: {e}");
+                    // Try the unified settings app first
+                    let result = std::process::Command::new("cosmic-applet-settings")
+                        .arg("bing-wallpaper")
+                        .spawn();
+                    if result.is_err() {
+                        // Fallback: Flatpak or native standalone settings
+                        let result = if is_flatpak() {
+                            std::process::Command::new("flatpak-spawn")
+                                .args([
+                                    "--host",
+                                    "flatpak",
+                                    "run",
+                                    "io.github.reality2_roycdavies.cosmic-bing-wallpaper",
+                                    "--settings",
+                                ])
+                                .spawn()
+                        } else {
+                            let exe = std::env::current_exe()
+                                .unwrap_or_else(|_| "cosmic-bing-wallpaper".into());
+                            std::process::Command::new(exe).arg("--settings").spawn()
+                        };
+                        if let Err(e) = result {
+                            eprintln!("Failed to launch settings: {e}");
+                        }
                     }
                 });
             }
