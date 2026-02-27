@@ -81,7 +81,24 @@ Then add the applet to your panel via **Panel Settings → Applets**.
 
 ### From Source (Native)
 
-Build with Cargo and install manually:
+#### Prerequisites
+
+- [Rust](https://rustup.rs/) toolchain (1.75+)
+- [just](https://github.com/casey/just) command runner
+- System libraries:
+
+```bash
+# Debian/Ubuntu/Pop!_OS
+sudo apt install libwayland-dev libxkbcommon-dev libssl-dev pkg-config just
+
+# Fedora
+sudo dnf install wayland-devel libxkbcommon-devel openssl-devel just
+
+# Arch
+sudo pacman -S wayland libxkbcommon openssl just
+```
+
+#### Build and Install
 
 ```bash
 # Clone the repository
@@ -89,17 +106,22 @@ git clone https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
 cd cosmic-bing-wallpaper
 
 # Build release binary
-cargo build --release
+just build-release
 
-# Install binary
-sudo install -Dm755 target/release/cosmic-bing-wallpaper /usr/local/bin/cosmic-bing-wallpaper
+# Install binary, desktop entry, and icons to ~/.local
+just install-local
+```
 
-# Install desktop entry (required for COSMIC to find the applet)
-sudo install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop /usr/share/applications/io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop
+#### Other just commands
 
-# Install icons
-sudo install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg /usr/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg
-sudo install -Dm644 resources/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg /usr/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg
+```bash
+just build-debug       # Debug build
+just run               # Build debug and run
+just run-release       # Build release and run
+just check             # Run clippy checks
+just fmt               # Format code
+just clean             # Clean build artifacts
+just uninstall-local   # Remove installed files
 ```
 
 Then add the applet to your panel via **Panel Settings → Applets**.
