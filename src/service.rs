@@ -443,14 +443,14 @@ pub fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
 /// # Arguments
 /// * `cmd` - The command to run (e.g., "pkill", "pgrep")
 /// * `args` - Command arguments (e.g., &["-TERM", "-x", "cosmic-bg"])
-fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
+fn run_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
     std::process::Command::new(cmd)
         .args(args)
         .output()
 }
 
 /// Spawns a command in the background (non-blocking).
-fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
+fn spawn_command(cmd: &str) -> std::io::Result<std::process::Child> {
     std::process::Command::new(cmd)
         .spawn()
 }
@@ -501,18 +501,18 @@ pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to write config: {e}"))?;
 
     // Send SIGTERM to cosmic-bg to trigger a restart with the new config
-    let _ = run_host_command("pkill", &["-TERM", "-x", "cosmic-bg"]);
+    let _ = run_command("pkill", &["-TERM", "-x", "cosmic-bg"]);
 
     // Give COSMIC a moment to auto-restart cosmic-bg
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
     // Verify cosmic-bg is running; if COSMIC didn't restart it, start it manually
-    let check = run_host_command("pgrep", &["-x", "cosmic-bg"]);
+    let check = run_command("pgrep", &["-x", "cosmic-bg"]);
     match check {
         Ok(output) if output.status.success() => Ok(()),  // Already running
         _ => {
             // Not running — start it ourselves
-            spawn_host_command("cosmic-bg")
+            spawn_command("cosmic-bg")
                 .map_err(|e| format!("Failed to start cosmic-bg: {e}"))?;
             std::thread::sleep(std::time::Duration::from_millis(500));
             Ok(())

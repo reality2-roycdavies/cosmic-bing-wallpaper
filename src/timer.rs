@@ -1,7 +1,6 @@
 //! Internal Timer Module
 //!
-//! Provides an internal timer for scheduled wallpaper updates, replacing
-//! the systemd timer for Flatpak compatibility.
+//! Provides an internal timer for scheduled wallpaper updates.
 //!
 //! ## Timer Behavior
 //! - Runs daily at 08:00 local time
@@ -85,7 +84,7 @@ impl TimerState {
     }
 }
 
-/// Internal timer that replaces systemd timer for Flatpak compatibility
+/// Internal timer for scheduled daily wallpaper updates
 #[derive(Debug)]
 pub struct InternalTimer {
     /// Whether the timer is currently enabled
