@@ -39,7 +39,7 @@ install:
     install -Dm0644 resources/{{appid}}.desktop {{destdir}}/usr/share/applications/{{appid}}.desktop
     install -Dm0644 resources/{{appid}}.svg {{destdir}}/usr/share/icons/hicolor/scalable/apps/{{appid}}.svg
     install -Dm0644 resources/{{appid}}-symbolic.svg {{destdir}}/usr/share/icons/hicolor/symbolic/apps/{{appid}}-symbolic.svg
-    install -Dm0644 resources/org.cosmicbing.Wallpaper1.service {{destdir}}/usr/share/dbus-1/services/org.cosmicbing.Wallpaper1.service
+    install -Dm0644 resources/io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1.service {{destdir}}/usr/share/dbus-1/services/io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1.service
 
 # Install to local user (with icon and desktop entry)
 install-local:
@@ -70,9 +70,9 @@ install-local:
 
     # Create D-Bus service file with expanded home path
     mkdir -p ~/.local/share/dbus-1/services
-    cat > ~/.local/share/dbus-1/services/org.cosmicbing.Wallpaper1.service << EOF
+    cat > ~/.local/share/dbus-1/services/io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1.service << EOF
     [D-BUS Service]
-    Name=org.cosmicbing.Wallpaper1
+    Name=io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1
     Exec=$HOME/.local/bin/cosmic-bing-wallpaper --daemon
     EOF
 
@@ -96,7 +96,7 @@ uninstall-local:
     rm -f ~/.local/share/icons/hicolor/symbolic/apps/{{appid}}-symbolic.svg
     rm -f ~/.local/share/icons/hicolor/symbolic/apps/{{appid}}-on-symbolic.svg
     rm -f ~/.local/share/icons/hicolor/symbolic/apps/{{appid}}-off-symbolic.svg
-    rm -f ~/.local/share/dbus-1/services/org.cosmicbing.Wallpaper1.service
+    rm -f ~/.local/share/dbus-1/services/io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1.service
 
 # Install with system tray autostart (uses systemd for COSMIC desktop)
 install-with-tray: install-local

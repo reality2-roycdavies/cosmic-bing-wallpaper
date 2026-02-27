@@ -865,35 +865,27 @@ fn scan_history(wallpaper_dir: &str) -> Vec<HistoryItem> {
 /// If the applet is not running (D-Bus connection fails), we fall back to
 /// reading the timer state file from disk.
 async fn check_timer_status() -> TimerStatus {
-    match WallpaperClient::connect().await {
-        Ok(client) => {
-            // Applet is running — query via D-Bus
-            match client.get_timer_enabled().await {
-                Ok(enabled) => {
-                    if enabled {
-                        // Get the next scheduled run time for display
-                        let next_run = match client.get_timer_next_run().await {
-                            Ok(time) if !time.is_empty() => time,
-                            _ => "Scheduled".to_string(),
-                        };
-                        TimerStatus::Installed { next_run }
-                    } else {
-                        TimerStatus::NotInstalled
-                    }
-                }
-                Err(e) => TimerStatus::Error(format!("D-Bus error: {e}"))
-            }
-        }
-        Err(_) => {
-            // Applet not running — fall back to reading the state file directly.
-            // This allows the settings window to show timer state even without the applet.
-            let state = crate::timer::TimerState::load();
-            if state.enabled {
-                TimerStatus::Installed { next_run: "Applet not running".to_string() }
+    if let Ok(client) = WallpaperClient::connect().await {
+        // Try D-Bus first
+        if let Ok(enabled) = client.get_timer_enabled().await {
+            if enabled {
+                let next_run = match client.get_timer_next_run().await {
+                    Ok(time) if !time.is_empty() => time,
+                    _ => "Scheduled".to_string(),
+                };
+                return TimerStatus::Installed { next_run };
             } else {
-                TimerStatus::NotInstalled
+                return TimerStatus::NotInstalled;
             }
         }
+    }
+
+    // Fallback: read the state file directly
+    let state = crate::timer::TimerState::load();
+    if state.enabled {
+        TimerStatus::Installed { next_run: "Applet not running".to_string() }
+    } else {
+        TimerStatus::NotInstalled
     }
 }
 
@@ -903,36 +895,30 @@ async fn check_timer_status() -> TimerStatus {
 /// isn't running, writes directly to the timer state file so the setting
 /// is picked up when the applet next starts.
 async fn install_timer() -> Result<(), String> {
-    match WallpaperClient::connect().await {
-        Ok(client) => {
-            client.set_timer_enabled(true).await
-                .map_err(|e| format!("Failed to enable timer: {e}"))
-        }
-        Err(_) => {
-            // Fallback: write directly to the state file
-            let mut state = crate::timer::TimerState::load();
-            state.enabled = true;
-            state.save()?;
-            Ok(())
+    // Try D-Bus first, fall back to state file if unavailable
+    if let Ok(client) = WallpaperClient::connect().await {
+        if client.set_timer_enabled(true).await.is_ok() {
+            return Ok(());
         }
     }
+    // Fallback: write directly to the state file
+    let mut state = crate::timer::TimerState::load();
+    state.enabled = true;
+    state.save()
 }
 
 /// Disables the daily auto-update timer via D-Bus (or falls back to state file).
 async fn uninstall_timer() -> Result<(), String> {
-    match WallpaperClient::connect().await {
-        Ok(client) => {
-            client.set_timer_enabled(false).await
-                .map_err(|e| format!("Failed to disable timer: {e}"))
-        }
-        Err(_) => {
-            // Fallback: write directly to the state file
-            let mut state = crate::timer::TimerState::load();
-            state.enabled = false;
-            state.save()?;
-            Ok(())
+    // Try D-Bus first, fall back to state file if unavailable
+    if let Ok(client) = WallpaperClient::connect().await {
+        if client.set_timer_enabled(false).await.is_ok() {
+            return Ok(());
         }
     }
+    // Fallback: write directly to the state file
+    let mut state = crate::timer::TimerState::load();
+    state.enabled = false;
+    state.save()
 }
 
 /// Applies a wallpaper to the COSMIC desktop.

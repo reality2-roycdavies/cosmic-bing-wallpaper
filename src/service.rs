@@ -60,7 +60,7 @@ fn run_in_tokio<T>(future: impl Future<Output = T>) -> T {
 
 /// D-Bus service name — must be unique on the session bus.
 /// Other applications use this name to find and call our service.
-pub const SERVICE_NAME: &str = "io.github.reality2_roycdavies.cosmic-bing-wallpaper.Wallpaper1";
+pub const SERVICE_NAME: &str = "io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1";
 
 /// D-Bus object path — the "address" where our interface lives.
 /// Follows the convention of converting dots to slashes.
