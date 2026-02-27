@@ -44,6 +44,8 @@ mod service;        // D-Bus service + wallpaper apply logic (embedded in the ap
 mod timer;          // Internal daily timer for automatic wallpaper updates
 mod dbus_client;    // D-Bus client proxy (used by settings window to talk to the applet)
 
+const APPLET_ID: &str = "io.github.reality2_roycdavies.cosmic-bing-wallpaper";
+
 /// Application entry point — dispatches to the appropriate mode based on CLI arguments.
 ///
 /// The same binary serves three purposes:
@@ -62,7 +64,11 @@ fn main() -> cosmic::iced::Result {
         // Dispatch based on the first argument
         match args[1].as_str() {
             "--settings" | "-s" => {
-                // Launch the full settings/management window
+                // Try the unified settings hub first, fall back to standalone
+                open_settings()
+            }
+            "--settings-standalone" => {
+                // Always open the standalone settings window directly
                 settings::run_settings()
             }
             "--fetch-and-apply" | "--fetch" | "-f" => {
@@ -90,13 +96,28 @@ fn main() -> cosmic::iced::Result {
     }
 }
 
+/// Try to open settings via cosmic-applet-settings hub; fall back to standalone.
+fn open_settings() -> cosmic::iced::Result {
+    use std::process::Command;
+    if Command::new("cosmic-applet-settings")
+        .arg(APPLET_ID)
+        .spawn()
+        .is_ok()
+    {
+        Ok(())
+    } else {
+        settings::run_settings()
+    }
+}
+
 /// Prints help message
 fn print_help(program: &str) {
     println!("Bing Wallpaper for COSMIC Desktop\n");
     println!("Usage: {} [OPTIONS]\n", program);
     println!("Options:");
     println!("  (none)             Run as COSMIC panel applet");
-    println!("  --settings, -s     Open the settings window");
+    println!("  --settings, -s     Open settings (via hub or standalone)");
+    println!("  --settings-standalone  Open standalone settings window");
     println!("  --fetch, -f        Fetch and apply wallpaper (one-shot, no GUI)");
     println!("  --version, -v      Show version information");
     println!("  --help, -h         Show this help message");

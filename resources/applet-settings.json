@@ -1,0 +1,6 @@
+{
+    "name": "Bing Wallpaper",
+    "icon": "io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic",
+    "applet_id": "io.github.reality2_roycdavies.cosmic-bing-wallpaper",
+    "settings_cmd": "cosmic-bing-wallpaper --settings-standalone"
+}

@@ -86,6 +86,10 @@ install-local:
         systemctl --user start cosmic-bing-wallpaper-tray.service
     fi
 
+    # Install applet registration for cosmic-applet-settings
+    mkdir -p ~/.local/share/cosmic-applet-settings/applets
+    cp resources/applet-settings.json ~/.local/share/cosmic-applet-settings/applets/{{name}}.json
+
     echo "Installation complete!"
 
 # Uninstall from local user
@@ -97,6 +101,7 @@ uninstall-local:
     rm -f ~/.local/share/icons/hicolor/symbolic/apps/{{appid}}-on-symbolic.svg
     rm -f ~/.local/share/icons/hicolor/symbolic/apps/{{appid}}-off-symbolic.svg
     rm -f ~/.local/share/dbus-1/services/io.github.reality2_roycdavies.cosmic_bing_wallpaper.Wallpaper1.service
+    rm -f ~/.local/share/cosmic-applet-settings/applets/{{name}}.json
 
 # Install with system tray autostart (uses systemd for COSMIC desktop)
 install-with-tray: install-local
