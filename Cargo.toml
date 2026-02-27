@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["Roy C. Davies"]
 license = "MIT"
 description = "Bing Daily Wallpaper applet for COSMIC desktop"
+keywords = ["cosmic-desktop", "wallpaper", "bing", "cosmic-applet", "linux"]
+categories = ["gui"]
+repository = "https://github.com/reality2-roycdavies/cosmic-bing-wallpaper"
+homepage = "https://github.com/reality2-roycdavies/cosmic-bing-wallpaper"
 
 [lib]
 name = "cosmic_bing_wallpaper"
