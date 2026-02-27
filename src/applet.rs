@@ -38,7 +38,7 @@ use tokio::sync::RwLock;
 
 // --- Internal modules ---
 use crate::config::Config;
-use crate::service::{is_flatpak, ServiceState, WallpaperService, SERVICE_NAME, OBJECT_PATH};
+use crate::service::{ServiceState, WallpaperService, SERVICE_NAME, OBJECT_PATH};
 use crate::timer::InternalTimer;
 
 /// Application ID (must match desktop entry)
@@ -300,23 +300,10 @@ impl cosmic::Application for BingWallpaperApplet {
                         .arg("bing-wallpaper")
                         .spawn();
                     if result.is_err() {
-                        // Fallback: Flatpak or native standalone settings
-                        let result = if is_flatpak() {
-                            std::process::Command::new("flatpak-spawn")
-                                .args([
-                                    "--host",
-                                    "flatpak",
-                                    "run",
-                                    "io.github.reality2_roycdavies.cosmic-bing-wallpaper",
-                                    "--settings",
-                                ])
-                                .spawn()
-                        } else {
-                            let exe = std::env::current_exe()
-                                .unwrap_or_else(|_| "cosmic-bing-wallpaper".into());
-                            std::process::Command::new(exe).arg("--settings").spawn()
-                        };
-                        if let Err(e) = result {
+                        // Fallback: launch standalone settings
+                        let exe = std::env::current_exe()
+                            .unwrap_or_else(|_| "cosmic-bing-wallpaper".into());
+                        if let Err(e) = std::process::Command::new(exe).arg("--settings").spawn() {
                             eprintln!("Failed to launch settings: {e}");
                         }
                     }

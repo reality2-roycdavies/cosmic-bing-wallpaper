@@ -15,18 +15,9 @@ use std::path::PathBuf;
 
 /// Get the app config directory path.
 ///
-/// In Flatpak, we use the exposed host config directory rather than XDG_CONFIG_HOME
-/// because Flatpak remaps XDG_CONFIG_HOME to ~/.var/app/APP_ID/config/.
-///
-/// Returns `~/.config/cosmic-bing-wallpaper/` in both native and Flatpak environments.
+/// Returns `~/.config/cosmic-bing-wallpaper/` (or equivalent XDG config directory).
 pub fn app_config_dir() -> Option<PathBuf> {
-    if std::path::Path::new("/.flatpak-info").exists() {
-        // In Flatpak, use the exposed host config directory
-        dirs::home_dir().map(|h| h.join(".config/cosmic-bing-wallpaper"))
-    } else {
-        // Native: use standard XDG config directory
-        dirs::config_dir().map(|d| d.join("cosmic-bing-wallpaper"))
-    }
+    dirs::config_dir().map(|d| d.join("cosmic-bing-wallpaper"))
 }
 
 /// Represents a Bing regional market.

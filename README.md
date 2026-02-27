@@ -48,38 +48,7 @@ This project includes both a simple shell script for quick use and a native COSM
 
 ## Installation
 
-### From Flathub
-
-```bash
-flatpak install flathub io.github.reality2_roycdavies.cosmic-bing-wallpaper
-```
-
-Then add the applet to your panel via **Panel Settings → Applets**.
-
-### From Source (Flatpak)
-
-Build and install the Flatpak package locally:
-
-```bash
-# Install flatpak-builder if not already installed
-sudo apt install flatpak-builder  # Debian/Ubuntu/Pop!_OS
-sudo pacman -S flatpak-builder    # Arch/Manjaro
-
-# Install required Flatpak SDK (if not already installed)
-flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-flatpak install flathub org.freedesktop.Sdk.Extension.rust-stable//25.08
-
-# Clone the repository
-git clone https://github.com/reality2-roycdavies/cosmic-bing-wallpaper.git
-cd cosmic-bing-wallpaper
-
-# Build and install the Flatpak (first build takes a while)
-flatpak-builder --user --install --force-clean build-dir flathub/io.github.reality2_roycdavies.cosmic-bing-wallpaper.yml
-```
-
-Then add the applet to your panel via **Panel Settings → Applets**.
-
-### From Source (Native)
+### From Source
 
 #### Prerequisites
 
@@ -129,10 +98,6 @@ Then add the applet to your panel via **Panel Settings → Applets**.
 ### Uninstalling
 
 ```bash
-# Flatpak
-flatpak uninstall io.github.reality2_roycdavies.cosmic-bing-wallpaper
-
-# Native
 sudo rm /usr/local/bin/cosmic-bing-wallpaper
 sudo rm /usr/share/applications/io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop
 sudo rm /usr/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg
@@ -184,7 +149,6 @@ cosmic-bing-wallpaper/
 ├── Cargo.toml                         # Rust dependencies
 ├── README.md                          # This file
 ├── LICENSE                            # MIT License
-├── flathub/                           # Flatpak manifest for building
 ├── src/
 │   ├── main.rs                        # Entry point (applet/settings/fetch)
 │   ├── applet.rs                      # COSMIC panel applet with popup
@@ -271,7 +235,6 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed technical learnings including:
 - Panel applet implementation (v0.4.0+)
 - D-Bus service architecture
 - COSMIC desktop internals
-- Flatpak compatibility
 
 ## License
 

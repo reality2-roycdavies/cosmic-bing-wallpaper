@@ -30,9 +30,5 @@ build-dir/
 .DS_Store
 Thumbs.db
 
-# Flatpak build artifacts
-.flatpak-builder/
-flathub/.flatpak-builder/
-
 # Development tool directories
 .opencode/

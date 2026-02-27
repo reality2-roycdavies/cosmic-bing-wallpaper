@@ -35,15 +35,6 @@ use crate::bing::{self, BingImage};   // Bing API client
 use crate::config::Config;           // User configuration
 use crate::timer::InternalTimer;     // Daily timer
 
-/// Checks if the application is running inside a Flatpak sandbox.
-///
-/// Flatpak creates a `/.flatpak-info` file inside the sandbox. We use this
-/// to decide whether to use `flatpak-spawn --host` for running commands
-/// on the host system (outside the sandbox).
-pub fn is_flatpak() -> bool {
-    std::path::Path::new("/.flatpak-info").exists()
-}
-
 /// Helper to run async code that requires a tokio runtime.
 ///
 /// The D-Bus service methods are called by zbus's own async executor,
@@ -447,40 +438,21 @@ pub fn cleanup_old_wallpapers(wallpaper_dir: &str, keep_days: u32) -> usize {
     deleted
 }
 
-/// Runs a command on the host system, automatically handling Flatpak sandboxing.
-///
-/// When running inside Flatpak, commands need to be prefixed with
-/// `flatpak-spawn --host` to execute on the host rather than inside the sandbox.
-/// This helper does that transparently.
+/// Runs a command and waits for it to complete.
 ///
 /// # Arguments
 /// * `cmd` - The command to run (e.g., "pkill", "pgrep")
 /// * `args` - Command arguments (e.g., &["-TERM", "-x", "cosmic-bg"])
 fn run_host_command(cmd: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
-    if is_flatpak() {
-        let mut spawn_args = vec!["--host", cmd];
-        spawn_args.extend(args);
-        std::process::Command::new("flatpak-spawn")
-            .args(&spawn_args)
-            .output()
-    } else {
-        std::process::Command::new(cmd)
-            .args(args)
-            .output()
-    }
+    std::process::Command::new(cmd)
+        .args(args)
+        .output()
 }
 
-/// Spawns a command in the background on the host system (non-blocking).
-/// Like `run_host_command` but doesn't wait for the command to finish.
+/// Spawns a command in the background (non-blocking).
 fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
-    if is_flatpak() {
-        std::process::Command::new("flatpak-spawn")
-            .args(["--host", cmd])
-            .spawn()
-    } else {
-        std::process::Command::new(cmd)
-            .spawn()
-    }
+    std::process::Command::new(cmd)
+        .spawn()
 }
 
 /// Applies a wallpaper image to the COSMIC desktop.
@@ -499,9 +471,6 @@ fn spawn_host_command(cmd: &str) -> std::io::Result<std::process::Child> {
 /// COSMIC doesn't have a "reload config" API — the only way to make it
 /// pick up a new wallpaper is to restart the background process.
 pub fn apply_cosmic_wallpaper(image_path: &str) -> Result<(), String> {
-    // We use home_dir() instead of config_dir() because in Flatpak,
-    // config_dir() returns the sandboxed path (~/.var/app/APP_ID/config/),
-    // but COSMIC reads from the real ~/.config/ on the host.
     let config_path = dirs::home_dir()
         .ok_or("Could not find home directory")?
         .join(".config/cosmic/com.system76.CosmicBackground/v1/all");
