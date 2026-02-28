@@ -44,9 +44,13 @@ This project includes both a simple shell script for quick use and a native COSM
 
 ## Screenshots
 
+![Inline Settings](screenshots/settings-inline.png)
+
+*Bing Wallpaper settings in the cosmic-applet-settings hub — image preview, copyright, timer status, region selector, and wallpaper history with Apply/Delete actions.*
+
 ![Main Window](screenshots/Screenshot_2026-02-06_20-51-29.png)
 
-*Panel applet popup and settings window showing today's Bing image, region selector, and auto-update timer controls.*
+*Panel applet popup and standalone settings window.*
 
 ![History Browser](screenshots/Screenshot_2026-02-06_20-52-11.png)
 
