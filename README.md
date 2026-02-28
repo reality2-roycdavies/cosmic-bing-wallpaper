@@ -12,7 +12,7 @@ This project was built collaboratively using AI-assisted development with [Claud
 
 ## Overview
 
-This project includes both a simple shell script for quick use and a native COSMIC panel applet with full settings window.
+This project includes both a simple shell script for quick use and a native COSMIC panel applet with full settings integration.
 
 ## Features
 
@@ -23,13 +23,19 @@ This project includes both a simple shell script for quick use and a native COSM
 - **Timer Toggle**: Enable/disable daily automatic updates from the popup
 - **Status Display**: Shows timer state and next scheduled update
 
-### Settings Window
-- **Image Preview**: See today's Bing image before applying
-- **History Browser**: Browse and re-apply previously downloaded wallpapers
+### Inline Settings (via cosmic-applet-settings hub)
+- **Image Preview**: See the current wallpaper directly in the settings page
+- **Copyright Display**: Shows photographer attribution from Bing metadata
+- **History Browser**: Scrollable list of previously downloaded wallpapers with Apply/Delete buttons
+- **Delete Confirmation**: Destructive actions require confirmation before executing
 - **Region Selector**: Choose from 21 Bing markets (US, UK, Germany, Japan, etc.)
-- **One-click Apply**: Set any image as your desktop wallpaper instantly
-- **Auto-Update Timer**: Enable/disable daily updates directly from settings
-- **Status Display**: Shows next scheduled update time
+- **Configurable Update Time**: Set the daily auto-update hour (0-23)
+- **Live Status**: Timer status refreshes automatically every 10 seconds
+- **One-click Fetch**: Fetch today's wallpaper button above the history list
+
+### Standalone Settings Window
+- Full settings window with image preview and history browser
+- Can be launched independently via `--settings-standalone`
 
 ### Shell Script
 - Lightweight alternative for automation
@@ -93,15 +99,39 @@ just clean             # Clean build artifacts
 just uninstall-local   # Remove installed files
 ```
 
-Then add the applet to your panel via **Panel Settings → Applets**.
+Then add the applet to your panel via **Panel Settings > Applets**.
 
 ### Uninstalling
 
 ```bash
-sudo rm /usr/local/bin/cosmic-bing-wallpaper
-sudo rm /usr/share/applications/io.github.reality2_roycdavies.cosmic-bing-wallpaper.desktop
-sudo rm /usr/share/icons/hicolor/scalable/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper.svg
-sudo rm /usr/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cosmic-bing-wallpaper-symbolic.svg
+just uninstall-local
+```
+
+## CLI Usage
+
+```bash
+# Run as COSMIC panel applet (default, no arguments)
+cosmic-bing-wallpaper
+
+# Open settings (via hub or standalone)
+cosmic-bing-wallpaper --settings
+
+# Open standalone settings window directly
+cosmic-bing-wallpaper --settings-standalone
+
+# Fetch and apply wallpaper (one-shot, no GUI)
+cosmic-bing-wallpaper --fetch
+
+# Settings hub protocol (used by cosmic-applet-settings)
+cosmic-bing-wallpaper --settings-describe
+cosmic-bing-wallpaper --settings-set market '"en-US"'
+cosmic-bing-wallpaper --settings-action fetch
+cosmic-bing-wallpaper --settings-action apply_history /path/to/wallpaper.jpg
+cosmic-bing-wallpaper --settings-action delete_history /path/to/wallpaper.jpg
+
+# Show version or help
+cosmic-bing-wallpaper --version
+cosmic-bing-wallpaper --help
 ```
 
 ## Automatic Daily Updates
@@ -109,10 +139,11 @@ sudo rm /usr/share/icons/hicolor/symbolic/apps/io.github.reality2_roycdavies.cos
 ### From the Panel Applet or Settings
 
 1. Click the applet icon in the panel, or open Settings
-2. Toggle "Daily Update" to enable automatic updates
-3. The wallpaper will automatically update daily at 8:00 AM
+2. Toggle "Daily Auto-Update" to enable automatic updates
+3. Optionally adjust the update hour (defaults to 08:00)
+4. The wallpaper will automatically update daily at the configured time
 
-The timer runs within the applet process - no systemd services required. The applet starts automatically with the COSMIC panel.
+The timer runs within the applet process — no systemd services required. The applet starts automatically with the COSMIC panel.
 
 ## Configuration
 
@@ -125,6 +156,11 @@ Configuration is stored at `~/.config/cosmic-bing-wallpaper/config.json`:
 | `auto_update` | Whether the daily update timer is enabled | `false` |
 | `keep_days` | Days to keep old wallpapers before cleanup (0 = keep forever) | `30` |
 | `fetch_on_startup` | Automatically fetch today's image when app starts | `true` |
+| `scheduled_hour` | Hour of day (0-23) for the daily auto-update timer | `8` |
+
+Timer state is stored separately at `~/.config/cosmic-bing-wallpaper/timer_state.json`.
+
+Downloaded wallpapers are saved with a `.meta.json` sidecar containing the Bing copyright, title, date, and market metadata.
 
 ## Supported Regions
 
@@ -150,13 +186,15 @@ cosmic-bing-wallpaper/
 ├── README.md                          # This file
 ├── LICENSE                            # MIT License
 ├── src/
-│   ├── main.rs                        # Entry point (applet/settings/fetch)
+│   ├── main.rs                        # Entry point (applet/settings/fetch/CLI protocol)
 │   ├── applet.rs                      # COSMIC panel applet with popup
-│   ├── settings.rs                    # Settings window (full UI)
-│   ├── bing.rs                        # Bing API client
+│   ├── settings.rs                    # Standalone settings window (full UI)
+│   ├── settings_cli.rs               # CLI settings protocol (--settings-describe/set/action)
+│   ├── settings_page.rs              # Legacy embeddable settings page
+│   ├── bing.rs                        # Bing API client + metadata sidecar
 │   ├── config.rs                      # Configuration & markets
 │   ├── service.rs                     # D-Bus service + wallpaper operations
-│   ├── timer.rs                       # Internal timer for daily updates
+│   ├── timer.rs                       # Internal timer for daily updates (configurable hour)
 │   └── dbus_client.rs                 # D-Bus client proxy (for settings)
 └── resources/
     ├── *.desktop                      # Desktop entry (X-CosmicApplet)
@@ -182,6 +220,15 @@ Wallpapers are applied by:
 2. Using COSMIC's RON (Rusty Object Notation) format
 3. Restarting the `cosmic-bg` process to load the new wallpaper
 
+### Settings Hub Integration
+
+The applet integrates with [cosmic-applet-settings](https://github.com/reality2-roycdavies/cosmic-applet-settings) via a CLI protocol:
+
+1. **Describe**: `--settings-describe` outputs a JSON schema with image preview, settings controls, and history list
+2. **Set**: `--settings-set` updates configuration values
+3. **Action**: `--settings-action` handles fetch, apply, and delete operations (with optional item ID for per-item actions)
+4. **Refresh**: The hub re-runs describe every 10 seconds to update timer status and reflect new wallpapers
+
 ## Development
 
 ### Technology Stack
@@ -191,6 +238,7 @@ Wallpapers are applied by:
 - **reqwest** - HTTP client for API calls
 - **serde** - JSON serialization/deserialization
 - **zbus** - D-Bus IPC for applet/settings communication
+- **chrono** - Date/time handling for timer and metadata
 
 ### Architecture
 
@@ -204,12 +252,12 @@ The application uses a **panel applet** architecture with an embedded D-Bus serv
 │  │ (service)  │  │ (internal) │  │ + Popup    │ │
 │  └────────────┘  └────────────┘  └────────────┘ │
 └──────────────────────────────────────────────────┘
-        ▲
-        │ D-Bus calls
-┌───────┴───────────┐
-│  Settings Window  │
-│  (D-Bus client)   │
-└───────────────────┘
+        ▲                                  ▲
+        │ D-Bus calls                      │ CLI protocol
+┌───────┴───────────┐        ┌─────────────┴──────────┐
+│  Settings Window  │        │  cosmic-applet-settings │
+│  (D-Bus client)   │        │  (settings hub)         │
+└───────────────────┘        └────────────────────────┘
 ```
 
 #### Components
@@ -217,9 +265,10 @@ The application uses a **panel applet** architecture with an embedded D-Bus serv
 | Component | File | Purpose |
 |-----------|------|---------|
 | **Applet** | `applet.rs` | Native COSMIC panel applet with popup. Embeds D-Bus service and timer. |
-| **Settings** | `settings.rs` | Full settings window with image preview, history browser, region selector. |
+| **Settings** | `settings.rs` | Standalone settings window with image preview, history browser, region selector. |
+| **Settings CLI** | `settings_cli.rs` | CLI protocol for inline settings via the hub (describe/set/action). |
 | **Service** | `service.rs` | D-Bus service managing wallpaper operations. |
-| **Timer** | `timer.rs` | Internal async timer for daily updates (no systemd required). |
+| **Timer** | `timer.rs` | Internal async timer for daily updates with configurable hour. |
 | **D-Bus Client** | `dbus_client.rs` | Proxy for settings window to communicate with applet. |
 
 #### Key Design Points
@@ -227,7 +276,8 @@ The application uses a **panel applet** architecture with an embedded D-Bus serv
 - The applet runs as a native COSMIC panel applet (auto-starts with the panel)
 - D-Bus service and timer run in a background thread within the applet process
 - The settings window is a separate process launched via `--settings`
-- No systemd, autostart, or lockfile management needed - COSMIC panel handles lifecycle
+- The settings hub renders inline settings via the CLI protocol — no separate window needed
+- No systemd, autostart, or lockfile management needed — COSMIC panel handles lifecycle
 
 ### Technical Documentation
 
