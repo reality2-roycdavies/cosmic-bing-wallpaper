@@ -16,8 +16,6 @@ use tokio::task::JoinHandle;
 
 use crate::config::app_config_dir;
 
-/// Default scheduled run time (08:00 local time)
-const SCHEDULED_HOUR: u32 = 8;
 const SCHEDULED_MINUTE: u32 = 0;
 
 /// Delay after boot before running catch-up (seconds)
@@ -251,27 +249,34 @@ impl Drop for InternalTimer {
     }
 }
 
-/// Calculate the next scheduled run time (08:00 local time)
+/// Calculate the next scheduled run time using the configured hour.
 fn calculate_next_run() -> DateTime<Local> {
+    let config = crate::config::Config::load();
+    let hour = config.scheduled_hour.min(23);
+    calculate_next_run_at(hour)
+}
+
+/// Calculate the next scheduled run time at the given hour.
+fn calculate_next_run_at(hour: u32) -> DateTime<Local> {
     let now = Local::now();
     let today_run = now.date_naive().and_time(
-        NaiveTime::from_hms_opt(SCHEDULED_HOUR, SCHEDULED_MINUTE, 0).unwrap()
+        NaiveTime::from_hms_opt(hour, SCHEDULED_MINUTE, 0).unwrap()
     );
     let today_run = today_run.and_local_timezone(Local).unwrap();
 
     if now < today_run {
-        // Today's run hasn't happened yet
         today_run
     } else {
-        // Schedule for tomorrow
         today_run + Duration::days(1)
     }
 }
 
 /// Check if we need to catch up on a missed run
 fn check_needs_catchup(state: &TimerState) -> bool {
+    let config = crate::config::Config::load();
+    let hour = config.scheduled_hour.min(23);
     let now = Local::now();
-    let today_run_time = NaiveTime::from_hms_opt(SCHEDULED_HOUR, SCHEDULED_MINUTE, 0).unwrap();
+    let today_run_time = NaiveTime::from_hms_opt(hour, SCHEDULED_MINUTE, 0).unwrap();
 
     // Has today's scheduled time passed?
     let now_time = now.time();
@@ -314,11 +319,11 @@ mod tests {
 
     #[test]
     fn test_calculate_next_run() {
-        let next = calculate_next_run();
+        let next = calculate_next_run_at(8);
         let now = Local::now();
 
         // Next run should be in the future or at scheduled hour
-        assert!(next > now || next.hour() == SCHEDULED_HOUR);
+        assert!(next > now || next.hour() == 8);
     }
 
     #[test]

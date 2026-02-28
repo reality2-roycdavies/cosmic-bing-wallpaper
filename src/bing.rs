@@ -179,6 +179,18 @@ pub async fn download_image(image: &BingImage, wallpaper_dir: &str, market: &str
     let filepath = dir.join(&filename);
     let filepath_str = filepath.to_string_lossy().to_string();
 
+    // Save/update metadata sidecar (copyright, title) even if image already exists
+    let meta_path = filepath.with_extension("meta.json");
+    if !meta_path.exists() {
+        let meta = serde_json::json!({
+            "copyright": image.copyright,
+            "title": image.title,
+            "date": &date,
+            "market": market,
+        });
+        let _ = std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap_or_default());
+    }
+
     // Skip download if already exists (idempotent operation)
     if filepath.exists() {
         return Ok(filepath_str);

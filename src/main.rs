@@ -39,6 +39,7 @@ mod applet;         // COSMIC panel applet (lives in the panel bar, shows popup 
 mod config;         // User configuration and Bing market definitions
 mod bing;           // Bing API client (fetches image metadata and downloads images)
 mod settings;       // Full settings window (launched via --settings)
+mod settings_cli;   // CLI settings protocol (--settings-describe/set/action)
 mod settings_page;  // Embeddable settings page (used by cosmic-applet-settings)
 mod service;        // D-Bus service + wallpaper apply logic (embedded in the applet)
 mod timer;          // Internal daily timer for automatic wallpaper updates
@@ -70,6 +71,27 @@ fn main() -> cosmic::iced::Result {
             "--settings-standalone" => {
                 // Always open the standalone settings window directly
                 settings::run_settings()
+            }
+            "--settings-describe" => {
+                settings_cli::describe();
+                return Ok(());
+            }
+            "--settings-set" => {
+                if args.len() < 4 {
+                    eprintln!("Usage: cosmic-bing-wallpaper --settings-set <key> <json_value>");
+                    std::process::exit(1);
+                }
+                settings_cli::set(&args[2], &args[3]);
+                return Ok(());
+            }
+            "--settings-action" => {
+                if args.len() < 3 {
+                    eprintln!("Usage: cosmic-bing-wallpaper --settings-action <action_id> [<item_id>]");
+                    std::process::exit(1);
+                }
+                let item_id = args.get(3).map(|s| s.as_str());
+                settings_cli::action(&args[2], item_id);
+                return Ok(());
             }
             "--fetch-and-apply" | "--fetch" | "-f" => {
                 // Headless mode: fetch today's wallpaper and apply it, then exit

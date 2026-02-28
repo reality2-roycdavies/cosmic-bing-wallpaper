@@ -81,10 +81,18 @@ pub struct Config {
     /// Disable for metered connections or manual-only operation.
     #[serde(default = "default_fetch_on_startup")]
     pub fetch_on_startup: bool,
+    /// Hour of day (0-23) for the daily auto-update timer.
+    /// Defaults to 8 (08:00 local time).
+    #[serde(default = "default_scheduled_hour")]
+    pub scheduled_hour: u32,
 }
 
 fn default_fetch_on_startup() -> bool {
     true
+}
+
+fn default_scheduled_hour() -> u32 {
+    8
 }
 
 impl Default for Config {
@@ -107,6 +115,7 @@ impl Default for Config {
             auto_update: false,
             keep_days: 30,
             fetch_on_startup: true,
+            scheduled_hour: 8,
         }
     }
 }
