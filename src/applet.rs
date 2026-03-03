@@ -33,6 +33,8 @@ use cosmic::Element;
 // --- Standard library and async imports ---
 // Arc = thread-safe reference counting for sharing data between threads
 use std::sync::Arc;
+// Mutex = async lock for the event receiver (shared between subscription and applet)
+use tokio::sync::Mutex;
 // RwLock = async read-write lock for shared mutable state
 use tokio::sync::RwLock;
 
@@ -59,9 +61,10 @@ enum ServiceCommand {
 /// Events sent from the background service thread back to the applet UI.
 ///
 /// These update the UI state (e.g., showing "Fetching..." or the result).
-#[derive(Debug)]
-enum ServiceEvent {
-    /// Periodic update of timer state (sent every 500ms so UI stays in sync)
+/// Sent through a tokio channel and received by the async subscription.
+#[derive(Debug, Clone)]
+pub(crate) enum ServiceEvent {
+    /// Timer state changed (enabled/disabled or next run time updated)
     TimerState { enabled: bool, next_run: String },
     /// A wallpaper fetch has started
     FetchStarted,
@@ -80,10 +83,9 @@ enum ServiceEvent {
 /// "The Elm Architecture". It makes the UI predictable and easy to reason about.
 #[derive(Debug, Clone)]
 pub enum Message {
-    /// Timer tick: check for new events from the background service thread.
-    /// This fires every 500ms via the `subscription()` method, keeping the
-    /// UI in sync with the background service's state (timer status, fetch results).
-    PollEvents,
+    /// An event arrived from the background service thread (fetch status, timer state).
+    /// Delivered asynchronously via the subscription — no polling needed.
+    ServiceEvent(ServiceEvent),
     /// The compositor (window manager) closed our popup window.
     /// We need to update our state to reflect that the popup is no longer visible.
     PopupClosed(Id),
@@ -123,7 +125,7 @@ pub struct BingWallpaperApplet {
     popup: Option<Id>,
 
     // --- State synced from the background service thread ---
-    // These values are updated every 500ms by PollEvents
+    // These values are updated as events arrive from the background thread
 
     /// Whether the daily auto-update timer is currently enabled
     timer_enabled: bool,
@@ -137,11 +139,11 @@ pub struct BingWallpaperApplet {
     // --- Communication channels with the background service thread ---
 
     /// Sender half of the command channel: UI thread sends commands to the background thread.
-    /// Uses std::sync::mpsc (not tokio) because the UI thread is single-threaded.
-    cmd_tx: std::sync::mpsc::Sender<ServiceCommand>,
+    /// Uses tokio::sync::mpsc for async-compatible communication.
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<ServiceCommand>,
     /// Receiver half of the event channel: UI thread receives events from the background thread.
-    /// Polled every 500ms via the PollEvents subscription.
-    event_rx: std::sync::mpsc::Receiver<ServiceEvent>,
+    /// Wrapped in Arc<Mutex> so the async subscription can hold a reference to it.
+    event_rx: Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<ServiceEvent>>>,
 }
 
 /// Implementation of the COSMIC Application trait.
@@ -183,8 +185,8 @@ impl cosmic::Application for BingWallpaperApplet {
         // Create two channels for bidirectional communication:
         // cmd_tx/cmd_rx: UI → background (commands like "fetch wallpaper")
         // event_tx/event_rx: background → UI (events like "fetch complete")
-        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
-        let (event_tx, event_rx) = std::sync::mpsc::channel();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
 
         // Load the timer's enabled/disabled state from the config file on disk
         let initial_state = crate::timer::TimerState::load();
@@ -208,7 +210,7 @@ impl cosmic::Application for BingWallpaperApplet {
             is_fetching: false,
             fetch_status: "Ready".to_string(),
             cmd_tx,
-            event_rx,
+            event_rx: Arc::new(Mutex::new(event_rx)),
         };
 
         // Task::none() means no async startup tasks — the background thread handles everything
@@ -228,29 +230,22 @@ impl cosmic::Application for BingWallpaperApplet {
     /// and predictable.
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         match message {
-            Message::PollEvents => {
-                // Drain ALL pending events from the background service.
-                // try_recv() is non-blocking: returns Ok(event) if available, Err if empty.
-                // We use a while loop to process all queued events at once.
-                while let Ok(event) = self.event_rx.try_recv() {
-                    match event {
-                        ServiceEvent::TimerState { enabled, next_run } => {
-                            // Update our local copy of the timer state for display
-                            self.timer_enabled = enabled;
-                            self.next_run = next_run;
-                        }
-                        ServiceEvent::FetchStarted => {
-                            // Show loading state in the popup
-                            self.is_fetching = true;
-                            self.fetch_status = "Fetching...".to_string();
-                        }
-                        ServiceEvent::FetchComplete(result) => {
-                            // Show the result (success or error) in the popup
-                            self.is_fetching = false;
-                            match result {
-                                Ok(msg) => self.fetch_status = msg,
-                                Err(e) => self.fetch_status = format!("Error: {e}"),
-                            }
+            Message::ServiceEvent(event) => {
+                // Handle events from the background service as they arrive
+                match event {
+                    ServiceEvent::TimerState { enabled, next_run } => {
+                        self.timer_enabled = enabled;
+                        self.next_run = next_run;
+                    }
+                    ServiceEvent::FetchStarted => {
+                        self.is_fetching = true;
+                        self.fetch_status = "Fetching...".to_string();
+                    }
+                    ServiceEvent::FetchComplete(result) => {
+                        self.is_fetching = false;
+                        match result {
+                            Ok(msg) => self.fetch_status = msg,
+                            Err(e) => self.fetch_status = format!("Error: {e}"),
                         }
                     }
                 }
@@ -312,14 +307,21 @@ impl cosmic::Application for BingWallpaperApplet {
         Task::none()
     }
 
-    /// Returns background subscriptions that produce Messages on a schedule.
-    ///
-    /// Subscriptions are like timers that run in the background and periodically
-    /// produce Messages. Here we poll the background service every 500ms to
-    /// keep the UI in sync with timer state and fetch progress.
+    /// Returns an event-driven subscription that yields messages as they arrive
+    /// from the background service thread. No polling — the subscription only
+    /// wakes when there's an actual event to process.
     fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
-        cosmic::iced::time::every(std::time::Duration::from_millis(500))
-            .map(|_| Message::PollEvents)
+        let rx = self.event_rx.clone();
+        cosmic::iced::Subscription::run_with_id("service-events", async_stream::stream! {
+            let mut rx = rx.lock().await;
+            loop {
+                match rx.recv().await {
+                    Some(event) => yield event,
+                    None => break,
+                }
+            }
+        })
+        .map(Message::ServiceEvent)
     }
 
     /// Builds the panel icon widget that appears in the COSMIC panel bar.
@@ -534,8 +536,8 @@ impl BingWallpaperApplet {
 /// This function is the "main loop" for the background thread. It:
 /// 1. Creates and starts the internal timer (for daily wallpaper fetches)
 /// 2. Registers the D-Bus service (so the settings window can communicate with us)
-/// 3. Listens for commands from the UI thread and timer events
-/// 4. Sends status updates back to the UI thread every 500ms
+/// 3. Awaits commands from the UI thread (event-driven, no polling)
+/// 4. Sends status events back to the UI thread only when state changes
 ///
 /// # Arguments
 /// * `cmd_rx` - Receives commands from the UI thread (fetch, toggle timer)
@@ -543,10 +545,10 @@ impl BingWallpaperApplet {
 ///
 /// # Threading Model
 /// This runs on its own OS thread with its own tokio runtime, separate from
-/// the COSMIC/iced UI thread. Communication happens through std::sync::mpsc channels.
+/// the COSMIC/iced UI thread. Communication happens through tokio::sync::mpsc channels.
 async fn run_background_service(
-    cmd_rx: std::sync::mpsc::Receiver<ServiceCommand>,
-    event_tx: std::sync::mpsc::Sender<ServiceEvent>,
+    mut cmd_rx: tokio::sync::mpsc::UnboundedReceiver<ServiceCommand>,
+    event_tx: tokio::sync::mpsc::UnboundedSender<ServiceEvent>,
 ) {
     // --- Set up the internal timer ---
     // The timer handles daily scheduled fetches and catch-up after boot.
@@ -585,11 +587,17 @@ async fn run_background_service(
         }
     };
 
+    // --- Send initial timer state to UI ---
+    let enabled = timer.is_enabled();
+    let next_run = timer.next_run_string().await;
+    let _ = event_tx.send(ServiceEvent::TimerState { enabled, next_run });
+
     // --- Spawn a task to handle timer events ---
     // When the timer fires (daily at 08:00 or on catch-up), this task
     // automatically fetches and applies today's wallpaper.
     let state_for_timer = state.clone();
     let event_tx_timer = event_tx.clone();
+    let timer_for_updates = timer.clone();
     let _timer_handle = tokio::spawn(async move {
         // timer_rx.recv() blocks until the timer fires, then returns Some(())
         while let Some(()) = timer_rx.recv().await {
@@ -598,42 +606,43 @@ async fn run_background_service(
 
             let result = do_fetch_and_apply(&state_for_timer).await;
             let _ = event_tx_timer.send(ServiceEvent::FetchComplete(result));
+
+            // Send updated timer state after fetch (next_run time changed)
+            let enabled = timer_for_updates.is_enabled();
+            let next_run = timer_for_updates.next_run_string().await;
+            let _ = event_tx_timer.send(ServiceEvent::TimerState { enabled, next_run });
         }
     });
 
     // --- Main event loop ---
-    // Runs forever, checking for UI commands and sending status updates.
-    loop {
-        // Check for commands from the applet UI (non-blocking)
-        if let Ok(cmd) = cmd_rx.try_recv() {
-            match cmd {
-                ServiceCommand::FetchWallpaper => {
-                    // Notify UI that fetch has started
-                    let _ = event_tx.send(ServiceEvent::FetchStarted);
-                    // Spawn the fetch as a separate async task so it doesn't block
-                    // this loop (fetching can take several seconds for network I/O)
-                    let state_clone = state.clone();
-                    let event_tx_clone = event_tx.clone();
-                    tokio::spawn(async move {
-                        let result = do_fetch_and_apply(&state_clone).await;
-                        let _ = event_tx_clone.send(ServiceEvent::FetchComplete(result));
-                    });
-                }
-                ServiceCommand::SetTimerEnabled(enabled) => {
-                    // Update the timer state (persisted to disk by set_enabled)
-                    timer.set_enabled(enabled);
-                }
+    // Awaits commands from the UI thread (event-driven, no busy-waiting).
+    while let Some(cmd) = cmd_rx.recv().await {
+        match cmd {
+            ServiceCommand::FetchWallpaper => {
+                // Notify UI that fetch has started
+                let _ = event_tx.send(ServiceEvent::FetchStarted);
+                // Spawn the fetch as a separate async task so it doesn't block
+                // this loop (fetching can take several seconds for network I/O)
+                let state_clone = state.clone();
+                let event_tx_clone = event_tx.clone();
+                let timer_clone = timer.clone();
+                tokio::spawn(async move {
+                    let result = do_fetch_and_apply(&state_clone).await;
+                    let _ = event_tx_clone.send(ServiceEvent::FetchComplete(result));
+                    // Send updated timer state (next_run may have changed)
+                    let enabled = timer_clone.is_enabled();
+                    let next_run = timer_clone.next_run_string().await;
+                    let _ = event_tx_clone.send(ServiceEvent::TimerState { enabled, next_run });
+                });
+            }
+            ServiceCommand::SetTimerEnabled(enabled) => {
+                // Update the timer state (persisted to disk by set_enabled)
+                timer.set_enabled(enabled);
+                // Notify UI of the new timer state immediately
+                let next_run = timer.next_run_string().await;
+                let _ = event_tx.send(ServiceEvent::TimerState { enabled, next_run });
             }
         }
-
-        // Send the current timer state to the UI thread so the popup
-        // can display the correct toggle state and next run time
-        let enabled = timer.is_enabled();
-        let next_run = timer.next_run_string().await;
-        let _ = event_tx.send(ServiceEvent::TimerState { enabled, next_run });
-
-        // Sleep 500ms before the next iteration to avoid busy-waiting
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 }
 

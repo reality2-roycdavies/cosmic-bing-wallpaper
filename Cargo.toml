@@ -43,6 +43,9 @@ chrono = "0.4"
 # D-Bus IPC for applet/settings communication
 zbus = "4"
 
+# Async stream for event-driven subscription
+async-stream = "0.3"
+
 [profile.release]
 lto = true
 codegen-units = 1
