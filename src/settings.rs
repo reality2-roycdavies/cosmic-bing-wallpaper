@@ -17,7 +17,7 @@
 use cosmic::app::Core;                  // Core app state provided by the framework
 use cosmic::iced::{Length, ContentFit}; // Length = sizing, ContentFit = image scaling
 use cosmic::widget::{                   // UI building blocks
-    self, button, column, container, row, text,
+    self, button, container, text, Column, Row, Space,
     dropdown, scrollable, settings, toggler,
 };
 use cosmic::{Action, Application, Element, Task}; // Core traits and types
@@ -606,17 +606,17 @@ impl SettingsApp {
                     .class(cosmic::theme::Container::Card)
             )
             .add(
-                row()
+                Row::new()
                     .spacing(16)
                     .push(text::body("Title"))
-                    .push(cosmic::widget::horizontal_space())
+                    .push(Space::new().width(Length::Fill))
                     .push(text::body(image_title))
             )
             .add(
-                row()
+                Row::new()
                     .spacing(16)
                     .push(text::body("Copyright"))
-                    .push(cosmic::widget::horizontal_space())
+                    .push(Space::new().width(Length::Fill))
                     .push(text::caption(image_copyright))
             )
             .add(
@@ -648,7 +648,7 @@ impl SettingsApp {
             .add(
                 settings::flex_item(
                     "Daily Update",
-                    row()
+                    Row::new()
                         .spacing(12)
                         .align_y(cosmic::iced::Alignment::Center)
                         .push(text::caption(timer_description))
@@ -715,7 +715,7 @@ impl SettingsApp {
     /// - "Delete" button with confirmation step
     fn view_history(&self) -> Element<'_, Message> {
         // --- Header with back button and refresh ---
-        let title_row = row()
+        let title_row = Row::new()
             .spacing(12)
             .align_y(cosmic::iced::Alignment::Center)
             .push(
@@ -723,7 +723,7 @@ impl SettingsApp {
                     .on_press(Message::ShowMain)   // Back arrow → return to main view
             )
             .push(text::title3("Downloaded Wallpapers"))
-            .push(cosmic::widget::horizontal_space())  // Push refresh to the right
+            .push(Space::new().width(Length::Fill))  // Push refresh to the right
             .push(
                 button::icon(widget::icon::from_name("view-refresh-symbolic"))
                     .on_press(Message::RefreshHistory)  // Rescan wallpaper directory
@@ -736,7 +736,7 @@ impl SettingsApp {
                 .center_x(Length::Fill)
                 .into()
         } else {
-            let mut history_column = column().spacing(12).padding(10);
+            let mut history_column = Column::new().spacing(12).padding(10);
 
             // Build a card for each wallpaper in the history
             for item in &self.history {
@@ -751,7 +751,7 @@ impl SettingsApp {
                     .height(Length::Fixed(90.0));
 
                 // Date and filename info
-                let info = column()
+                let info = Column::new()
                     .spacing(4)
                     .push(text::body(item.date.clone()))
                     .push(text::caption(item.filename.clone()));
@@ -765,7 +765,7 @@ impl SettingsApp {
                 let is_pending = self.pending_delete.as_ref() == Some(&item.path);
                 let delete_btn: Element<_> = if is_pending {
                     // Show confirmation buttons for this specific item
-                    row()
+                    Row::new()
                         .spacing(8)
                         .push(button::destructive("Confirm").on_press(Message::ConfirmDeleteHistoryItem))
                         .push(button::standard("Cancel").on_press(Message::CancelDeleteHistoryItem))
@@ -778,12 +778,12 @@ impl SettingsApp {
                 };
 
                 // Assemble the row: [preview | info | spacer | apply | delete]
-                let item_row = row()
+                let item_row = Row::new()
                     .spacing(16)
                     .align_y(cosmic::iced::Alignment::Center)
                     .push(preview)
                     .push(info)
-                    .push(cosmic::widget::horizontal_space())  // Push buttons to the right
+                    .push(Space::new().width(Length::Fill))  // Push buttons to the right
                     .push(apply_btn)
                     .push(delete_btn);
 
@@ -803,7 +803,7 @@ impl SettingsApp {
 
         let status = text::body(self.status_message.clone());
 
-        let content = column()
+        let content = Column::new()
             .spacing(16)
             .padding(20)
             .push(title_row)

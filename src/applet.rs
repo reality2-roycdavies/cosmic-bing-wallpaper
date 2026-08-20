@@ -22,7 +22,7 @@ use cosmic::iced::window::Id;
 // Length = sizing for UI elements; Rectangle = positioning for popup placement
 use cosmic::iced::{Length, Rectangle};
 // window module needed for on_close_requested signature
-use cosmic::iced_runtime::core::window;
+use cosmic::iced::window;
 // app_popup/destroy_popup = create and remove flyout popup surfaces
 use cosmic::surface::action::{app_popup, destroy_popup};
 // widget = UI building blocks (buttons, text, togglers, etc.)
@@ -42,6 +42,15 @@ use tokio::sync::RwLock;
 use crate::config::Config;
 use crate::service::{ServiceState, WallpaperService, SERVICE_NAME, OBJECT_PATH};
 use crate::timer::InternalTimer;
+
+/// Process-global handle to the background→UI event receiver.
+///
+/// The iced `Subscription::run` API only accepts a non-capturing `fn` pointer,
+/// so the subscription stream cannot close over `self.event_rx`. We stash a
+/// clone here in `init()` and the stream reads it back. Safe for a panel applet,
+/// which is a single instance per process.
+static EVENT_RX: std::sync::OnceLock<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<ServiceEvent>>>> =
+    std::sync::OnceLock::new();
 
 /// Application ID (must match desktop entry)
 const APP_ID: &str = "io.github.reality2_roycdavies.cosmic-bing-wallpaper";
@@ -213,6 +222,11 @@ impl cosmic::Application for BingWallpaperApplet {
             event_rx: Arc::new(Mutex::new(event_rx)),
         };
 
+        // Publish the event receiver for the subscription. The current iced
+        // Subscription::run only accepts a non-capturing fn pointer, so the
+        // stream reads the receiver from this process-global instead of a capture.
+        let _ = EVENT_RX.set(applet.event_rx.clone());
+
         // Task::none() means no async startup tasks — the background thread handles everything
         (applet, Task::none())
     }
@@ -311,8 +325,11 @@ impl cosmic::Application for BingWallpaperApplet {
     /// from the background service thread. No polling — the subscription only
     /// wakes when there's an actual event to process.
     fn subscription(&self) -> cosmic::iced::Subscription<Self::Message> {
-        let rx = self.event_rx.clone();
-        cosmic::iced::Subscription::run_with_id("service-events", async_stream::stream! {
+        // `Subscription::run` requires a non-capturing `fn` pointer, so the
+        // stream reads the receiver from the process-global `EVENT_RX` (set in
+        // `init()`) instead of closing over `self.event_rx`.
+        cosmic::iced::Subscription::run(|| async_stream::stream! {
+            let rx = EVENT_RX.get().expect("EVENT_RX set in init").clone();
             let mut rx = rx.lock().await;
             loop {
                 match rx.recv().await {
@@ -353,14 +370,19 @@ impl cosmic::Application for BingWallpaperApplet {
                     // 1. A setup closure that creates popup settings (position, size)
                     // 2. A render closure that builds the popup's UI content
                     Message::Surface(app_popup::<BingWallpaperApplet>(
+                        // live_settings: no live overrides needed
+                        |_| Default::default(),
                         move |state: &mut BingWallpaperApplet| {
                             // Generate a unique ID for this popup window
                             let new_id = Id::unique();
                             state.popup = Some(new_id);
 
-                            // Set popup dimensions
-                            let popup_width = 300u32;
-                            let popup_height = 260u32;
+                            // Set popup dimensions.
+                            // Width must be >= popup_container's fixed autosize width (360px);
+                            // a narrower surface than the committed buffer triggers an
+                            // xdg_surface unconfigured_buffer protocol error and crashes the applet.
+                            let popup_width = 380u32;
+                            let popup_height = 320u32;
 
                             // Calculate popup position relative to the panel icon
                             let mut popup_settings = state.core.applet.get_popup_settings(
@@ -414,7 +436,7 @@ impl cosmic::Application for BingWallpaperApplet {
     }
 
     /// Apply the COSMIC applet visual style (transparent background, panel-aware theming)
-    fn style(&self) -> Option<cosmic::iced_runtime::Appearance> {
+    fn style(&self) -> Option<cosmic::iced::theme::Style> {
         Some(cosmic::applet::style())
     }
 }
@@ -436,17 +458,19 @@ impl BingWallpaperApplet {
     /// │ ──────────────────────────── │  ← Divider
     /// │              [Settings...]   │  ← Opens settings window
     /// └──────────────────────────────┘
-    fn popup_content(&self) -> widget::Column<'_, Message> {
-        use cosmic::iced::widget::{column, container, horizontal_space, row, Space};
+    fn popup_content(&self) -> Element<'_, Message> {
         use cosmic::iced::{Alignment, Color};
+        use cosmic::widget::{container, Column, Row, Space};
+
+        // Full-width flexible spacer used to push row content to one side.
+        let hspace = || Space::new().width(Length::Fill);
 
         // --- Title row ---
-        let title_row = row![
-            text::body("Bing Wallpaper"),
-            horizontal_space(),    // Push content to the left
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
+        let title_row = Row::new()
+            .push(text::body("Bing Wallpaper"))
+            .push(hspace()) // Push content to the left
+            .spacing(8)
+            .align_y(Alignment::Center);
 
         // --- Timer status section ---
         let timer_label = if self.timer_enabled {
@@ -463,9 +487,12 @@ impl BingWallpaperApplet {
 
         // Conditionally include the "Next: ..." line
         let status_section = if next_run_text.is_empty() {
-            column![text::body(timer_label)].spacing(2)
+            Column::new().push(text::body(timer_label)).spacing(2)
         } else {
-            column![text::body(timer_label), text::caption(next_run_text)].spacing(2)
+            Column::new()
+                .push(text::body(timer_label))
+                .push(text::caption(next_run_text))
+                .spacing(2)
         };
 
         // --- Fetch status and button ---
@@ -482,52 +509,50 @@ impl BingWallpaperApplet {
         };
 
         // --- Timer toggle row ---
-        let timer_toggle_row = row![
-            text::body("Daily Update"),
-            horizontal_space(),    // Push toggle to the right
-            widget::toggler(self.timer_enabled).on_toggle(|_| Message::ToggleTimer),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
+        let timer_toggle_row = Row::new()
+            .push(text::body("Daily Update"))
+            .push(hspace()) // Push toggle to the right
+            .push(widget::toggler(self.timer_enabled).on_toggle(|_| Message::ToggleTimer))
+            .spacing(8)
+            .align_y(Alignment::Center);
 
         // --- Settings button row (right-aligned) ---
-        let settings_row = row![
-            horizontal_space(),    // Push button to the right
-            widget::button::standard("Settings...").on_press(Message::OpenSettings),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
+        let settings_row = Row::new()
+            .push(hspace()) // Push button to the right
+            .push(widget::button::standard("Settings...").on_press(Message::OpenSettings))
+            .spacing(8)
+            .align_y(Alignment::Center);
 
         // --- Visual divider (thin horizontal line) ---
         // Creates a 1px high colored bar using the theme's neutral color palette
         let divider = || {
-            container(Space::new(Length::Fill, Length::Fixed(1.0))).style(
-                |theme: &cosmic::Theme| {
+            container(Space::new().width(Length::Fill).height(Length::Fixed(1.0))).class(
+                cosmic::style::iced::Container::custom(|theme: &cosmic::Theme| {
                     let cosmic = theme.cosmic();
-                    container::Style {
+                    cosmic::iced::widget::container::Style {
                         background: Some(cosmic::iced::Background::Color(
                             Color::from(cosmic.palette.neutral_5),
                         )),
                         ..Default::default()
                     }
-                },
+                }),
             )
         };
 
         // --- Assemble the complete popup layout ---
-        column![
-            title_row,
-            divider(),
-            status_section,
-            fetch_text,
-            fetch_btn,
-            divider(),
-            timer_toggle_row,
-            divider(),
-            settings_row,
-        ]
-        .spacing(8)    // 8px gap between each widget
-        .padding(12)   // 12px padding around the entire popup
+        Column::new()
+            .push(title_row)
+            .push(divider())
+            .push(status_section)
+            .push(fetch_text)
+            .push(fetch_btn)
+            .push(divider())
+            .push(timer_toggle_row)
+            .push(divider())
+            .push(settings_row)
+            .spacing(8)    // 8px gap between each widget
+            .padding(12)   // 12px padding around the entire popup
+            .into()
     }
 }
 
