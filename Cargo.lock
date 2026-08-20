@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-bing-wallpaper"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "async-stream",
  "chrono",
